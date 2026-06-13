@@ -71,9 +71,15 @@ snapshot manager without inventing a second service.
 > ```proto
 > message ConfigPayload {
 >   uint32 schema_version = 1;
->   string content_type = 2;
->   bytes cherry_bundle_zstd = 3;
+>   PayloadFormat format = 2;
+>   bytes payload = 3;
 >   SnapshotMetadata metadata = 4;
+> }
+>
+> message PayloadFormat {
+>   string media_type = 1;
+>   string encoding = 2;
+>   string format_version = 3;
 > }
 >
 > message SnapshotMetadata {
@@ -84,21 +90,22 @@ snapshot manager without inventing a second service.
 >   string scope_kind = 5;
 >   string scope_id = 6;
 >   repeated string scopes = 7;
->   uint64 cherry_bundle_size = 8;
->   bytes cherry_bundle_sha256 = 9;
->   string cherry_bundle_format_version = 10;
->   string pack_format_version = 11;
+>   uint64 payload_size = 8;
+>   bytes payload_sha256 = 9;
 > }
 > ```
 >
 > Add validation where it is useful and stable:
 > - `schema_version > 0`
-> - `content_type` non-empty
-> - `cherry_bundle_zstd` non-empty
-> - `cherry_bundle_sha256` empty or exactly 32 bytes
+> - `format.media_type` non-empty
+> - `format.encoding` non-empty
+> - `payload` non-empty
+> - `payload_sha256` empty or exactly 32 bytes
 >
 > Do not add secret-bearing fields. Do not add tenant/user schema fields beyond
 > opaque lane and scope labels.
+> Do not use Cherry-specific names in public proto fields; use neutral bundle or
+> payload terminology. Cherry is the internal implementation detail.
 >
 > Regenerate Go, Connect, and vtprotobuf outputs using the repository's existing
 > buf setup.
@@ -529,7 +536,7 @@ compatibility checks needed before Plum depends on it.
 > 1. Publish a fixture snapshot.
 > 2. Fetch through `SnapshotService.Fetch`.
 > 3. Decode `ConfigPayload`.
-> 4. Extract `cherry_bundle_zstd`.
+> 4. Extract `payload`.
 > 5. Call `cherry.OpenBundleZstd`.
 > 6. Assert metadata and checksums line up.
 >

@@ -355,18 +355,24 @@ message SnapshotEnvelope {
 
 `version` is monotonically increasing per snapshot manager. `checksum` is the
 SHA-256 of the decompressed payload bytes. `payload` should be a compressed or
-raw `ConfigPayload` wrapper, not the Cherry bundle bytes directly. The wrapper
-keeps the transport envelope stable while allowing orange to add delivery
-metadata without changing Cherry's bundle format.
+raw `ConfigPayload` wrapper, not the bundle bytes directly. The public API
+should use neutral bundle/payload names and avoid leaking Cherry as a wire API
+concept. Cherry remains Orange's internal bundle implementation.
 
 Recommended payload shape:
 
 ```proto
 message ConfigPayload {
   uint32 schema_version = 1;
-  string content_type = 2;
-  bytes cherry_bundle_zstd = 3;
+  PayloadFormat format = 2;
+  bytes payload = 3;
   SnapshotMetadata metadata = 4;
+}
+
+message PayloadFormat {
+  string media_type = 1;
+  string encoding = 2;
+  string format_version = 3;
 }
 
 message SnapshotMetadata {
@@ -377,17 +383,16 @@ message SnapshotMetadata {
   string scope_kind = 5;
   string scope_id = 6;
   repeated string scopes = 7;
-  uint64 cherry_bundle_size = 8;
-  bytes cherry_bundle_sha256 = 9;
-  string cherry_bundle_format_version = 10;
-  string pack_format_version = 11;
+  uint64 payload_size = 8;
+  bytes payload_sha256 = 9;
 }
 ```
 
-`content_type` should identify the payload body format, for example
-`application/vnd.dio.cherry.bundle+zstd`. `schema_version` versions the
-`ConfigPayload` wrapper, while Cherry's own bundle and pack versions continue to
-belong to Cherry metadata.
+`format.media_type` should identify the payload body format, for example
+`application/vnd.dio.orange.config-bundle`. `format.encoding` should describe
+the byte encoding, for example `zstd` or `identity`.
+`format.format_version` versions the payload body format. `schema_version`
+versions the `ConfigPayload` wrapper.
 
 The metadata should stay operational and diagnostic:
 
@@ -399,10 +404,8 @@ The metadata should stay operational and diagnostic:
   than one stream of snapshots.
 - `scope_kind`, `scope_id`, `scopes`: echo the Cherry selection and concrete
   scopes so Plum and operators can verify they received the expected snapshot.
-- `cherry_bundle_size` and `cherry_bundle_sha256`: diagnostics and integrity for
-  the embedded bundle bytes, separate from the envelope checksum.
-- `cherry_bundle_format_version` and `pack_format_version`: quick compatibility
-  checks before attempting to open the bundle.
+- `payload_size` and `payload_sha256`: diagnostics and integrity for the
+  embedded payload bytes, separate from the envelope checksum.
 
 The metadata must not contain secret bytes, resolved credentials, provider auth
 headers, user key material, full tenant records, or normalized config dumps.
