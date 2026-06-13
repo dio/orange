@@ -169,9 +169,9 @@ published snapshot with version/checksum semantics and thread-safe read-side
 fetch.
 
 **Status (2026-06-13):**
-- Task 2.1 — pending.
-- Task 2.2 — pending.
-- Task 2.3 — pending.
+- Task 2.1 — done.
+- Task 2.2 — done.
+- Task 2.3 — done.
 
 ### Task 2.1 — Producer builder around Cherry
 
@@ -294,9 +294,9 @@ orange-owned server; both paths share the same snapshot manager and callback
 registration.
 
 **Status (2026-06-13):**
-- Task 3.1 — pending.
-- Task 3.2 — pending.
-- Task 3.3 — pending.
+- Task 3.1 — done.
+- Task 3.2 — done.
+- Task 3.3 — done.
 
 ### Task 3.1 — Auth and lane resolution hooks
 
@@ -308,6 +308,10 @@ registration.
 > - possibly `auth/` if the interface deserves its own package
 >
 > Required concepts:
+> See `DESIGN.md` "Auth, Principal, Partition, And Lane Mapping" for the stable
+> definitions. In short, authentication maps request credentials such as JWT,
+> mTLS, or API key material to a `Principal`; the embedding application maps that
+> principal to its own partition and then to an Orange snapshot lane.
 >
 > ```go
 > type Principal struct {
@@ -401,9 +405,9 @@ admin RPC and fetch it through `SnapshotService.Fetch`.
 standalone development server with fixture-backed publishing.
 
 **Status (2026-06-13):**
-- Task 4.1 — pending.
-- Task 4.2 — pending.
-- Task 4.3 — pending.
+- Task 4.1 — done.
+- Task 4.2 — done.
+- Task 4.3 — done.
 
 ### Task 4.1 — Handler attachment API
 
@@ -490,9 +494,9 @@ can publish and serve one valid snapshot.
 compatibility checks needed before Plum depends on it.
 
 **Status (2026-06-13):**
-- Task 5.1 — pending.
-- Task 5.2 — pending.
-- Task 5.3 — pending.
+- Task 5.1 — done.
+- Task 5.2 — done.
+- Task 5.3 — done.
 
 ### Task 5.1 — Error mapping and validation audit
 
@@ -549,6 +553,229 @@ compatibility checks needed before Plum depends on it.
 
 **Slice 5 acceptance gate:** `go test ./... -race` passes; Orange can publish,
 fetch, decode, and open a Cherry bundle through its public API.
+
+---
+
+## Slice 6 — Data-Plane Client Library
+
+**Slice goal:** Plum and other data planes can fetch Orange snapshots through a
+small Go client without hand-written polling boilerplate.
+
+**Status (2026-06-13):**
+- Task 6.1 — done.
+
+### Task 6.1 — Resilient `./client` fetch library
+
+> Add a public Go package under `./client` that wraps
+> `orange.config.v1.SnapshotService.Fetch` for data-plane consumers. The
+> package must use the generated Connect client internally and must not require
+> Plum to import server, snapshot-manager, producer, fixture, or admin code.
+>
+> Required behavior:
+> - Track the last accepted `version` and `checksum` locally.
+> - Send `FetchRequest.last_version` and `last_checksum` automatically.
+> - Return cached data when Orange replies with `Unchanged`.
+> - Decode `SnapshotEnvelope.payload` as `ConfigPayload`.
+> - Validate `SnapshotEnvelope.checksum` against the raw payload bytes.
+> - Validate `ConfigPayload.metadata.payload_sha256` when present.
+> - Expose the embedded bundle bytes directly to callers.
+> - Allow auth/header injection without custom request boilerplate.
+> - Support per-attempt timeout and context cancellation.
+> - Retry transient Connect errors with bounded exponential backoff.
+> - Use `singleflight` so concurrent fetch callers share one in-flight RPC.
+> - Return defensive copies so callers cannot mutate cached client state.
+>
+> Keep policy small and configurable. Do not add server streaming, background
+> goroutines, global loggers, or Plum-specific generation publication here. The
+> client is a polling helper; Plum remains responsible for opening the Cherry
+> bundle and publishing its own runtime generation.
+>
+> **Tests:** success path with decoded payload and bundle bytes; `Unchanged`
+> uses cached data; transient errors retry; auth headers are injected;
+> concurrent callers are coalesced through `singleflight`; invalid checksums
+> fail without updating cached state.
+>
+> **Acceptance:** `go test ./client/...` passes.
+
+---
+
+## Slice 7 — yamlserver Embedding Example
+
+**Slice goal:** Demonstrate orange as an embeddable library by building a
+self-contained example that watches a YAML config file, rebuilds Cherry bundles
+on change with debouncing, and serves them via an application-owned mux.
+See `DESIGN.md ## Examples` for the full design rationale.
+
+**Status (2026-06-13):**
+- Task 7.1 — done.
+- Task 7.2 — done.
+- Task 7.3 — done.
+
+### Task 7.1 — YAML schema and `cherry.Input` parser
+
+> Add a YAML schema that mirrors the full `cherry.Input` surface and a parser
+> that converts it into a `cherry.Input` value with no secret resolution. This is
+> a kitchen-sink example, not a minimal LLM-only fixture.
+>
+> Files to create:
+> - `examples/yamlserver/config.go`
+> - `examples/yamlserver/testdata/example.yaml`
+>
+> Define Go structs with `yaml:"..."` tags that unmarshal the YAML schema from
+> `DESIGN.md ## Examples / YAML Schema`. Cover every current top-level
+> `cherry.Input` field and nested field:
+> - providers: `id`, `kind`, `endpoint`, `secret_ref`, `auth_type`,
+>   `path_prefix`
+> - models: `id`, `provider`, `name`, `mode`, `capabilities`,
+>   `metadata_json`
+> - MCP servers: `id`, `endpoint`, `secret_ref`, `auth_type`
+> - scopes: `id`, `principals`, `mcp_profiles`
+> - principals: `slug`, compatibility `route`, explicit `model_routes`, `rate`
+> - route plans: `kind`, `provider`, `model`, `secret_ref`, `retry`,
+>   `children`, `split`
+> - split children: `weight`, `plan`
+> - retry policy: `retry_on`, `per_try_timeout_ms`
+> - rate policy: `usd_per_day_cents`, `rpm`, `on_exceed`
+> - MCP profiles and tool bindings: `path`, `tools`, `exposed_name`, `server`,
+>   `tool`, `secret_ref`, `auth_type`
+>
+> Implement:
+>
+> ```go
+> // ParseYAML parses YAML config data into cherry.Input.
+> // The returned string is a SHA-256 hex digest of data for use as SourceRevision.
+> func ParseYAML(data []byte) (cherry.Input, string, error)
+> ```
+>
+> Rules:
+> - `secret_ref` values copy verbatim into `cherry.Provider.SecretRef`; they
+>   must not be resolved.
+> - Unknown YAML keys must return an error (use `yaml.KnownFields` or equivalent
+>   strict decoding).
+> - Empty or syntactically invalid YAML returns a descriptive error.
+>
+> `testdata/example.yaml` must be a valid kitchen-sink example matching the
+> schema described in `DESIGN.md`. It should exercise provider and tool
+> `secret_ref` pass-through, model catalog metadata, compatibility `route`,
+> explicit `model_routes`, target/chain/split route plans, retry policy, MCP
+> servers, MCP profiles, and tool bindings.
+>
+> **Tests:** `examples/yamlserver/config_test.go`
+> - Kitchen-sink valid YAML parses into expected `cherry.Input`, including all
+>   top-level arrays and nested route/MCP structures.
+> - Secret refs appear verbatim in providers, route overrides, MCP servers, and
+>   MCP tool bindings; they are not resolved.
+> - Unknown top-level key returns an error.
+> - Unknown nested key returns an error.
+> - Empty input returns an error.
+> - Parsed kitchen-sink input builds with `cherry.BuildWithManifest` and opens
+>   with `cherry.NewBundle`/`cherry.EncodeBundleZstd`/`cherry.OpenBundleZstd`.
+>
+> **Acceptance:** `go test ./examples/yamlserver/...` passes.
+
+### Task 7.2 — File watcher with debounce
+
+> Add a watcher that monitors a single file path and triggers a callback after a
+> configurable debounce window.
+>
+> Files to create:
+> - `examples/yamlserver/watcher.go`
+>
+> Add `github.com/fsnotify/fsnotify` to `go.mod` if it is not already present.
+>
+> Required API:
+>
+> ```go
+> type Watcher struct { ... }
+>
+> func NewWatcher(path string, debounce time.Duration) *Watcher
+>
+> // Run blocks until ctx is cancelled. onChange is called after each debounced
+> // change event. Run returns ctx.Err() on normal shutdown.
+> func (w *Watcher) Run(ctx context.Context, logger *slog.Logger, onChange func()) error
+> ```
+>
+> Behavior:
+> - Multiple `fsnotify` events within the debounce window are collapsed into one
+>   `onChange` call.
+> - Log a warning but do not stop on transient watch errors (e.g. atomic editor
+>   save triggers a rename); re-add the watch if the file reappears.
+> - Return cleanly when ctx is cancelled.
+> - Default debounce when zero is 200 ms.
+>
+> **Tests:** `examples/yamlserver/watcher_test.go`
+> - Write the file multiple times within the debounce window; confirm `onChange`
+>   fires exactly once after the window expires.
+> - Cancel the context; confirm `Run` returns promptly.
+>
+> **Acceptance:** `go test ./examples/yamlserver/...` passes.
+
+### Task 7.3 — Wire yamlserver: mux embedding and watch loop
+
+> Add `examples/server/main.go` that ties the `examples/yamlserver` library,
+> watcher, and orange library together using the mux-attachment embedding mode.
+> This is the primary demonstration of orange as an embeddable library.
+>
+> Files to create:
+> - `examples/server/main.go`
+>
+> Startup sequence:
+>
+> 1. Parse flags: `--config` (YAML file path, required) and `--addr` (listen
+>    address, default `"127.0.0.1:8080"`).
+> 2. Create `producer.Builder` with `Producer: "yamlserver"`.
+> 3. Define the `MutationCallback`: read the YAML file, call
+>    `yamlserver.ParseYAML`, return
+>    `BuildResult{SourceRevision: contentHash, Scopes: scopeIDs(input), Input: ...}`.
+>    The file is read inside the callback so publication serialization governs
+>    consistency.
+> 4. Create `snapshot.Manager` with the builder and callback.
+> 5. Eager initial `mgr.Publish(ctx, MutationRequest{Lane: "default"})`; exit on
+>    error so the server never starts with an empty snapshot.
+> 6. Start `yamlserver.Watcher.Run` in a goroutine with the explicit `slog`
+>    logger; on each `onChange` call trigger
+>    `mgr.Publish(ctx, MutationRequest{Lane: "default"})`, log errors but do not
+>    exit.
+> 7. Build `server.NewService` with inline `devAuthenticator` and
+>    `singleLaneResolver` defined in the same file. These must not be exported or
+>    promoted outside `examples/server`.
+> 8. Attach `svc.SnapshotServiceHandler()` and `svc.ConfigAdminServiceHandler()`
+>    to an `http.NewServeMux()`.
+> 9. Add a `/healthz` endpoint to the same mux — this shows that the embedder
+>    owns the mux and co-locates its own routes.
+> 10. Serve with a plain `net/http.Server` pointing at the mux — not
+>     `svc.ListenAndServe` — to clearly demonstrate the mux-attachment path.
+> 11. Shut down cleanly on `SIGINT`/`SIGTERM` via context cancellation.
+>
+> Add at the top of the file:
+>
+> ```go
+> // yamlserver is a development-only example. The devAuthenticator and
+> // singleLaneResolver defined below bypass all credential checks. Do not use
+> // them in production.
+> ```
+>
+> The lane is always `"default"`, but the Cherry bundle scopes must be derived
+> from the parsed `cherry.Input.Scopes`; lane and Cherry scope are distinct
+> concepts. `ScopeKind` and `ScopeID` may be left empty; they are opaque labels
+> owned by the embedder.
+>
+> **Tests:** no unit tests required for `main.go` itself; the parser and watcher
+> are already tested. Add `examples/yamlserver/testdata/example.yaml` if not
+> created in Task 7.1.
+>
+> **Acceptance:**
+> ```
+> go run ./examples/server --config examples/yamlserver/testdata/example.yaml
+> ```
+> starts without panic, `curl http://127.0.0.1:8080/healthz` returns 200, and
+> editing the YAML file triggers a logged rebuild within the debounce window.
+
+**Slice 7 acceptance gate:** `go run ./examples/server --config
+examples/yamlserver/testdata/example.yaml` starts, serves one valid snapshot
+from `SnapshotService.Fetch`, the fetched Cherry bundle metadata scopes match
+the YAML `scopes[].id` values, and the server rebuilds the bundle when the YAML
+file changes.
 
 ---
 

@@ -122,6 +122,20 @@ promote it into `DESIGN.md` in the same change.
 - If an e2e cannot be run because required infrastructure is not implemented
   yet, state that explicitly and do not mark the task done.
 
+## Logging
+
+- Always use `log/slog` (Go 1.21+ structured logger). Do not use `log`, `fmt.Print*`,
+  or third-party logging packages.
+- Create loggers explicitly (`slog.New(...)`) rather than relying on the global
+  default so callers control handler configuration.
+- When a function needs to emit log lines, accept the logger as a parameter.
+  Follow the ordering convention `(ctx context.Context, logger *slog.Logger, …other params…)`.
+  For example: `func A(ctx context.Context, logger *slog.Logger, otherParams ...)`.
+- Log structured key/value pairs (`logger.Info("msg", "key", val)`) rather than
+  interpolated strings so log lines are machine-parseable.
+- Never log secret bytes, auth headers, resolved credential values, or full
+  tenant/provider records.
+
 ## Editing Guidance
 
 - Keep changes scoped to the requested implementation slice.

@@ -519,6 +519,63 @@ Orange authenticates callers and delegates authorization to the embedding
 application. The reusable server should expose middleware hooks rather than
 inventing a universal access model.
 
+### Auth, Principal, Partition, And Lane Mapping
+
+Orange uses four deliberately small concepts at the fetch boundary:
+
+- `Credential`: request authentication material supplied through transport or
+  headers, such as mTLS client identity, a JWT bearer token, an API key, or
+  embedding server session state.
+- `Principal`: the stable authenticated caller identity after credentials are
+  verified. It identifies the client asking for a snapshot, usually a Plum
+  instance, agent, service account, workload, or control-plane admin caller. It
+  is not a tenant model and does not need to identify an end user. The stable
+  fields Orange relies on are an opaque `ID` and optional authorization scopes.
+- `Partition`: an embedder-owned authorization and routing bucket for published
+  snapshots. A partition may represent a tenant, workspace, project, cell,
+  shard, region, environment, or any other control-plane boundary. Orange treats
+  it as opaque and does not expose it in `FetchRequest`.
+- `Lane`: the Orange snapshot-manager key that stores one current published
+  snapshot stream. A partition resolves to exactly one lane for a fetch. The
+  lane string may be the same value as the partition ID, but it is still an
+  Orange-local storage/routing key rather than a public tenancy field.
+
+The embedding application must provide these mappings:
+
+```text
+request credential
+  -> authenticate and verify issuer/signature/expiry/audience
+  -> Principal{ID, Scopes}
+  -> authorize principal for data-plane fetch
+  -> partition lookup or trusted partition claim
+  -> lane lookup
+  -> SnapshotManager.Fetch(lane, last_version, last_checksum)
+```
+
+Examples:
+
+- JWT: verify the token, derive `Principal.ID` from stable claims such as
+  `iss + sub`, `client_id`, or `azp`, derive scopes from `scope` or `scp`, then
+  map the principal to a partition by internal lookup. A partition claim can be
+  used only when the embedding issuer is trusted to mint that claim for this
+  service and the token audience is checked.
+- mTLS/SPIFFE: verify the client certificate, derive `Principal.ID` from the
+  SPIFFE ID or certificate subject, then use the embedder's workload registry to
+  find the partition and lane.
+- API key: look up the key hash in the embedder's credential table, return the
+  associated service-account principal and scopes, then resolve that principal
+  through the embedder's partition table.
+
+Unknown credentials fail as `unauthenticated`. Known principals without access
+to a partition or lane fail as `permission_denied` or, when the embedder wants
+to hide lane existence, `not_found`. Missing published snapshots for an
+authorized lane return `not_found`.
+
+`FetchRequest` must not carry partition or lane selection. Remote admin publish
+requests may carry opaque lane or scope selectors because admin callers mutate
+published snapshots, but the admin service must still authenticate and authorize
+that caller before publishing to the selected lane.
+
 Secret handling is reference-only. Provider and MCP credentials inside
 `cherry.Input` must stay as refs such as:
 
@@ -693,3 +750,179 @@ selection, version, checksum, and contained scopes.
   production change notifications exist.
 - Confirm Plum can fetch, open, publish, and hot reload bundles produced by
   orange.
+
+## Examples
+
+### yamlserver
+
+`examples/yamlserver` is a library package (`package yamlserver`) that exports
+`ParseYAML` and `Watcher`. `examples/server` is the runnable development binary
+that wires those pieces together with `server.NewService`, `snapshot.Manager`,
+and its own auth and lane hooks. The binary serves as the canonical demonstration
+of the mux-attachment embedding path and as a locally runnable server for Plum
+integration testing.
+
+#### YAML Schema
+
+The YAML schema maps directly to the full `cherry.Input` surface. It is a
+kitchen-sink development fixture, not a narrowed production domain model. There
+is no intermediate domain model: the file is the config and the file owner is
+the control plane. The schema must cover providers, models, MCP servers,
+scopes, principals, compatibility `route`, explicit `model_routes`, recursive
+target/chain/split route plans, retry policy, rate policy, MCP profiles, and
+MCP tool bindings:
+
+```yaml
+providers:
+  - id: openai
+    kind: openai
+    endpoint: https://api.openai.com
+    secret_ref: env://OPENAI_API_KEY
+    auth_type: bearer
+    path_prefix: /v1
+  - id: anthropic
+    kind: anthropic
+    endpoint: https://api.anthropic.com
+    secret_ref: vault://orange/anthropic
+    auth_type: bearer
+models:
+  - id: gpt-4o-mini
+    provider: openai
+    name: gpt-4o-mini
+    mode: chat
+    capabilities: [function_calling, tool_choice]
+    metadata_json: '{"context_window":128000}'
+  - id: claude-haiku
+    provider: anthropic
+    name: claude-3-5-haiku-latest
+    mode: chat
+    capabilities: [tool_choice]
+  - id: fallback-chat
+    provider: openai
+    name: gpt-4o-mini
+mcp_servers:
+  - id: github
+    endpoint: https://mcp.github.example
+    secret_ref: sm://github-token
+    auth_type: bearer
+scopes:
+  - id: prod
+    principals:
+      - slug: "slug:alice"
+        model_routes:
+          gpt-4o-mini:
+            kind: target
+            provider: openai
+            model: gpt-4o-mini
+            secret_ref: orange://alice/openai
+          claude-haiku:
+            kind: chain
+            retry:
+              retry_on: 401,403,5xx
+              per_try_timeout_ms: 2500
+            children:
+              - kind: target
+                provider: anthropic
+                model: claude-haiku
+              - kind: target
+                provider: openai
+                model: fallback-chat
+          fallback-chat:
+            kind: split
+            split:
+              - weight: 80
+                plan:
+                  kind: target
+                  provider: openai
+                  model: gpt-4o-mini
+              - weight: 20
+                plan:
+                  kind: target
+                  provider: anthropic
+                  model: claude-haiku
+        rate:
+          usd_per_day_cents: 1000
+          rpm: 60
+          on_exceed: reject
+      - slug: "slug:bob"
+        route:
+          kind: target
+          provider: openai
+          model: gpt-4o-mini
+        rate:
+          usd_per_day_cents: 500
+          rpm: 30
+          on_exceed: queue
+    mcp_profiles:
+      - path: github
+        tools:
+          - exposed_name: github__list_repos
+            server: github
+            tool: list_repos
+            secret_ref: sm://github-token
+            auth_type: bearer
+```
+
+`secret_ref` values are opaque strings and must not be resolved to bytes.
+Unknown YAML keys must produce a parse error. The YAML adapter may define its
+own structs for strict decoding, but field names and semantics should remain a
+thin snake_case projection of the corresponding `cherry.Input` fields.
+
+#### Watcher and Debounce
+
+A watcher goroutine monitors the file using `fsnotify`. Raw events within a
+configurable window (default 200 ms) are collapsed into a single rebuild:
+
+```text
+fsnotify event
+  -> debounce timer reset (200 ms default)
+  -> timer fires
+  -> call mgr.Publish for the "default" lane
+```
+
+The file is re-read inside the `MutationCallback`, not in the watcher goroutine.
+This keeps the manager's publication serialization as the single source of truth.
+If two rapid events slip through the debounce window, the manager serializes two
+callbacks and each re-reads the latest file bytes — the result is always
+consistent with the latest on-disk state.
+
+The watcher must receive an explicit `log/slog` logger, log a warning but not
+crash on transient watch errors such as file renames during editor atomic saves,
+and re-register the watch if the file reappears.
+
+#### Mux-Attachment Embedding Mode
+
+yamlserver uses the mux-attachment mode, not `svc.ListenAndServe`, so the
+example clearly shows an embedder owning the listener:
+
+```go
+svc := server.NewService(server.ServiceOptions{
+    Manager: mgr,
+    Auth:    auth,
+    Lanes:   lanes,
+})
+
+mux := http.NewServeMux()
+snapshotPath, snapshotHandler := svc.SnapshotServiceHandler()
+mux.Handle(snapshotPath, snapshotHandler)
+adminPath, adminHandler := svc.ConfigAdminServiceHandler()
+mux.Handle(adminPath, adminHandler)
+
+// Application owns additional routes alongside orange.
+mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+    w.WriteHeader(http.StatusOK)
+})
+
+srv := &http.Server{Addr: addr, Handler: mux}
+```
+
+This is the most common production embedding pattern: the control plane already
+has an HTTP server and adds orange handlers to it.
+
+#### Security
+
+`examples/server/main.go` defines `devAuthenticator` and `singleLaneResolver`
+inline. These helpers bypass all credential checks and must not leave the
+`examples/server` package. The file carries a visible comment warning against
+production use. Embedders supply their own `Authenticator` and `LaneResolver`;
+orange ships no reusable development bypass implementations.
