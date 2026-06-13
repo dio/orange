@@ -154,17 +154,17 @@ var file_orange_auth_v1_auth_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
 		ExtensionType: (*AuthOptions)(nil),
-		Field:         51000,
+		Field:         170845,
 		Name:          "orange.auth.v1.auth",
-		Tag:           "bytes,51000,opt,name=auth",
+		Tag:           "bytes,170845,opt,name=auth",
 		Filename:      "orange/auth/v1/auth_options.proto",
 	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
 var (
-	// optional orange.auth.v1.AuthOptions auth = 51000;
-	E_Auth = &file_orange_auth_v1_auth_options_proto_extTypes[0]
+	// optional orange.auth.v1.AuthOptions auth = 170845;
+	E_Auth = &file_orange_auth_v1_auth_options_proto_extTypes[0] // unique field number in the extension range
 )
 
 var File_orange_auth_v1_auth_options_proto protoreflect.FileDescriptor
@@ -181,7 +181,8 @@ const file_orange_auth_v1_auth_options_proto_rawDesc = "" +
 	"\x11AUTH_TYPE_API_KEY\x10\x01\x12\x1d\n" +
 	"\x19AUTH_TYPE_SERVICE_ACCOUNT\x10\x02\x12\x1e\n" +
 	"\x1aAUTH_TYPE_CLIENT_ASSERTION\x10\x03:Q\n" +
-	"\x04auth\x12\x1e.google.protobuf.MethodOptions\x18\xb8\x8e\x03 \x01(\v2\x1b.orange.auth.v1.AuthOptionsR\x04authB\xb1\x01\n" +
+	"\x04auth\x12\x1e.google.protobuf.MethodOptions\x18ݶ\n" +
+	" \x01(\v2\x1b.orange.auth.v1.AuthOptionsR\x04authB\xb1\x01\n" +
 	"\x12com.orange.auth.v1B\x10AuthOptionsProtoP\x01Z/github.com/dio/orange/api/orange/auth/v1;authv1\xa2\x02\x03OAX\xaa\x02\x0eOrange.Auth.V1\xca\x02\x0eOrange\\Auth\\V1\xe2\x02\x1aOrange\\Auth\\V1\\GPBMetadata\xea\x02\x10Orange::Auth::V1b\x06proto3"
 
 var (

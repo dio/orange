@@ -217,7 +217,7 @@ const file_orange_config_v1_service_proto_rawDesc = "" +
 	"\x06result\x12\x05\xbaH\x02\b\x01\"\v\n" +
 	"\tUnchanged2d\n" +
 	"\x0fSnapshotService\x12Q\n" +
-	"\x05Fetch\x12\x1e.orange.config.v1.FetchRequest\x1a\x1f.orange.config.v1.FetchResponse\"\a\xc2\xf3\x18\x03\n" +
+	"\x05Fetch\x12\x1e.orange.config.v1.FetchRequest\x1a\x1f.orange.config.v1.FetchResponse\"\a\xea\xb5S\x03\n" +
 	"\x01\x03B\xbb\x01\n" +
 	"\x14com.orange.config.v1B\fServiceProtoP\x01Z3github.com/dio/orange/api/orange/config/v1;configv1\xa2\x02\x03OCX\xaa\x02\x10Orange.Config.V1\xca\x02\x10Orange\\Config\\V1\xe2\x02\x1cOrange\\Config\\V1\\GPBMetadata\xea\x02\x12Orange::Config::V1b\x06proto3"
 

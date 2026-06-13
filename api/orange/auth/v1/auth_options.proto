@@ -43,5 +43,5 @@ message AuthOptions {
 
 // auth is the method-level extension for per-RPC authentication requirements.
 extend google.protobuf.MethodOptions {
-  AuthOptions auth = 51000;
+  AuthOptions auth = 170845; // unique field number in the extension range
 }

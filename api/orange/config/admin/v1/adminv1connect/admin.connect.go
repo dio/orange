@@ -40,8 +40,8 @@ const (
 
 // ConfigAdminServiceClient is a client for the orange.config.admin.v1.ConfigAdminService service.
 type ConfigAdminServiceClient interface {
-	// PublishSnapshot stores a new compiled config snapshot and broadcasts it to
-	// connected data-plane proxies via the SnapshotService Watch stream.
+	// PublishSnapshot stores a new compiled config snapshot for later polling
+	// through SnapshotService.Fetch.
 	PublishSnapshot(context.Context, *connect.Request[v1.PublishSnapshotRequest]) (*connect.Response[v1.PublishSnapshotResponse], error)
 }
 
@@ -78,8 +78,8 @@ func (c *configAdminServiceClient) PublishSnapshot(ctx context.Context, req *con
 // ConfigAdminServiceHandler is an implementation of the orange.config.admin.v1.ConfigAdminService
 // service.
 type ConfigAdminServiceHandler interface {
-	// PublishSnapshot stores a new compiled config snapshot and broadcasts it to
-	// connected data-plane proxies via the SnapshotService Watch stream.
+	// PublishSnapshot stores a new compiled config snapshot for later polling
+	// through SnapshotService.Fetch.
 	PublishSnapshot(context.Context, *connect.Request[v1.PublishSnapshotRequest]) (*connect.Response[v1.PublishSnapshotResponse], error)
 }
 

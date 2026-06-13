@@ -31,9 +31,9 @@ type PublishSnapshotRequest struct {
 	// expected_checksum is the SHA-256 the caller expects for the current snapshot.
 	// When present it must be exactly 32 bytes. Omit for an unconditional publish.
 	ExpectedChecksum []byte `protobuf:"bytes,2,opt,name=expected_checksum,json=expectedChecksum,proto3" json:"expected_checksum,omitempty"`
-	// prepared_data is the serialized ConfigPayload proto bytes to publish.
+	// prepared_data is opaque bytes supplied to the registered mutation callback.
 	// Remote admin clients should normally provide this. May be empty for
-	// in-process publish paths where data is supplied through a callback.
+	// in-process publish paths where data is supplied through typed state.
 	PreparedData  []byte `protobuf:"bytes,3,opt,name=prepared_data,json=preparedData,proto3" json:"prepared_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -178,7 +178,7 @@ const file_orange_config_admin_v1_admin_proto_rawDesc = "" +
 	"\x12published_checksum\x18\x03 \x01(\fR\x11publishedChecksum\x12\x16\n" +
 	"\x06scopes\x18\x04 \x03(\tR\x06scopes2\x99\x01\n" +
 	"\x12ConfigAdminService\x12\x82\x01\n" +
-	"\x0fPublishSnapshot\x12..orange.config.admin.v1.PublishSnapshotRequest\x1a/.orange.config.admin.v1.PublishSnapshotResponse\"\x0e\xc2\xf3\x18\n" +
+	"\x0fPublishSnapshot\x12..orange.config.admin.v1.PublishSnapshotRequest\x1a/.orange.config.admin.v1.PublishSnapshotResponse\"\x0e\xea\xb5S\n" +
 	"\n" +
 	"\x01\x01\x12\x05adminB\xdd\x01\n" +
 	"\x1acom.orange.config.admin.v1B\n" +

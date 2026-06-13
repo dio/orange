@@ -6,8 +6,8 @@ import "buf/validate/validate.proto";
 import "orange/auth/v1/auth_options.proto";
 
 service ConfigAdminService {
-  // PublishSnapshot stores a new compiled config snapshot and broadcasts it to
-  // connected data-plane proxies via the SnapshotService Watch stream.
+  // PublishSnapshot stores a new compiled config snapshot for later polling
+  // through SnapshotService.Fetch.
   rpc PublishSnapshot(PublishSnapshotRequest) returns (PublishSnapshotResponse) {
     option (orange.auth.v1.auth) = {
       auth_types: [AUTH_TYPE_API_KEY]
@@ -29,9 +29,9 @@ message PublishSnapshotRequest {
     expression: "this.size() == 0 || this.size() == 32"
   }];
 
-  // prepared_data is the serialized ConfigPayload proto bytes to publish.
+  // prepared_data is opaque bytes supplied to the registered mutation callback.
   // Remote admin clients should normally provide this. May be empty for
-  // in-process publish paths where data is supplied through a callback.
+  // in-process publish paths where data is supplied through typed state.
   bytes prepared_data = 3;
 }
 
