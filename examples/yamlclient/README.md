@@ -20,6 +20,22 @@ Then start yamlclient (terminal 2):
 go run examples/yamlclient/main.go
 ```
 
+To run an interactive REPL over the downloaded client-side bundle:
+
+```sh
+go run examples/yamlclient/main.go --repl
+```
+
+Example REPL commands:
+
+```text
+summary
+llm slug:alice gpt-4o-mini
+mcp call github github__list_repos
+reload
+quit
+```
+
 Optional flags:
 
 | Flag | Default | Description |
@@ -27,6 +43,7 @@ Optional flags:
 | `--server` | `http://127.0.0.1:8080` | Orange server base URL |
 | `--addr` | `127.0.0.1:8081` | Inspection HTTP server listen address |
 | `--interval` | `2s` | Snapshot poll interval |
+| `--repl` | `false` | Run an interactive REPL instead of the inspection HTTP server |
 
 ## Inspection endpoints
 
@@ -79,7 +96,52 @@ Field reference:
 | `bundle.scopes` | `cherry.BundleMetadata.Scopes` | Scope IDs actually packed into the bundle |
 | `bundle.pack.size_bytes` | `cherry.Manifest.SizeBytes` | Uncompressed pack blob size |
 
+### `GET /repl?cmd=...&scope=...`
+
+Runs one Cherry REPL command against the bundle downloaded and opened by
+yamlclient. `scope` is the active Cherry enforcement scope inside the current
+snapshot. The Orange lane is read from snapshot metadata and echoed in the
+response.
+
+```sh
+curl 'http://127.0.0.1:8081/repl?cmd=summary'
+curl 'http://127.0.0.1:8081/repl?scope=prod&cmd=llm%20slug:alice%20gpt-4o-mini'
+curl 'http://127.0.0.1:8081/repl?scope=prod&cmd=mcp%20call%20github%20github__list_repos'
+```
+
+`POST /repl` accepts the same request as JSON:
+
+```sh
+curl -s http://127.0.0.1:8081/repl \
+  -H 'content-type: application/json' \
+  -d '{"scope":"prod","line":"llm slug:alice gpt-4o-mini"}'
+```
+
+### `GET /server-repl?cmd=...&scope=...`
+
+Proxies the same stateless REPL request to yamlserver's `/debug/repl` endpoint.
+This demonstrates the server-side debugging shape where the bundle remains on
+the server and the server chooses the Orange lane before opening the current
+snapshot.
+
+```sh
+curl 'http://127.0.0.1:8081/server-repl?scope=prod&cmd=summary'
+```
+
 ## What this demonstrates
+
+### Lane and scope in the REPL
+
+The REPL absorbs both terms explicitly:
+
+- Orange **lane** selects the snapshot stream. yamlclient gets it from fetched
+  snapshot metadata.
+- Cherry **scope** selects the enforcement boundary inside that snapshot. Pass it
+  as `scope=prod` to HTTP endpoints or run `use prod` in `--repl` mode. When the
+  bundle contains one scope, yamlclient selects it automatically.
+
+In `--repl` mode, `reload` swaps the prompt to the latest snapshot already
+downloaded by the background poller.
 
 ### Polling with `last_version` / `last_checksum`
 
@@ -127,10 +189,10 @@ call `Fetch` concurrently.
 ```
 examples/yamlserver/main.go          examples/yamlclient/main.go
   │                                     │
-  │  fsnotify detects YAML change        │  poll every 2s
+  │  fsnotify detects YAML change       │  poll every 2s
   │  MutationCallback re-reads file      │  client.Fetch(ctx)
-  │  snapshot.Manager.Publish(…)         │    sends last_version + last_checksum
-  │  SnapshotEnvelope stored in lane     │    receives Unchanged or new envelope
+  │  snapshot.Manager.Publish(…)        │    sends last_version + last_checksum
+  │  SnapshotEnvelope stored in lane    │    receives Unchanged or new envelope
   │                                     │  cherry.OpenBundleZstd(bundleZstd)
   │  ◀── SnapshotService.Fetch ─────────┤  atomic.Pointer[snapshotView].Store
   │                                     │

@@ -244,8 +244,37 @@ snapshot.Manager  (per-lane atomic store)
 | Path | Description |
 |------|-------------|
 | `/healthz` | Returns 200 OK |
+| `/debug/repl` | Development-only stateless Cherry REPL over the current `default` lane snapshot |
 | `orange.config.v1.SnapshotService/Fetch` | Polling fetch for Plum data planes |
 | `orange.config.admin.v1.ConfigAdminService/PublishSnapshot` | Admin publish trigger |
+
+### Development REPL endpoint
+
+`/debug/repl` runs one Cherry REPL command against the current snapshot in the
+example's `default` Orange lane. It is intentionally example-only and protected
+only by the development authenticator in `main.go`.
+
+```sh
+curl 'http://127.0.0.1:8080/debug/repl?cmd=summary'
+curl 'http://127.0.0.1:8080/debug/repl?scope=prod&cmd=llm%20slug:alice%20gpt-4o-mini'
+curl 'http://127.0.0.1:8080/debug/repl?scope=prod&cmd=mcp%20call%20github%20github__list_repos'
+```
+
+`POST /debug/repl` accepts JSON:
+
+```sh
+curl -s http://127.0.0.1:8080/debug/repl \
+  -H 'content-type: application/json' \
+  -d '{"scope":"prod","line":"inspect principals"}'
+```
+
+The endpoint demonstrates how lane and scope compose:
+
+- Orange **lane** selects the current snapshot from `snapshot.Manager`; this
+  example always uses lane `default`.
+- Cherry **scope** selects the enforcement boundary inside that snapshot; pass it
+  as `scope=prod`, or use the returned `scope` field as client-side session
+  state.
 
 ---
 

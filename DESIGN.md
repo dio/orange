@@ -576,6 +576,39 @@ requests may carry opaque lane or scope selectors because admin callers mutate
 published snapshots, but the admin service must still authenticate and authorize
 that caller before publishing to the selected lane.
 
+## Diagnostic REPL Embedding
+
+Orange examples may embed `github.com/dio/cherry/repl` for operational
+inspection, but the diagnostic surface must preserve the same lane/scope split
+as the fetch path:
+
+- **Lane** is the Orange snapshot stream. It selects the current published
+  snapshot from `snapshot.Manager`.
+- **Scope** is the Cherry enforcement scope inside the selected snapshot. It is
+  the value used by `Reader.ResolveLLM*`, `Reader.ResolveMCP*`, and inspector
+  APIs.
+
+The example `yamlclient` demonstrates a client-side REPL over a downloaded
+snapshot. The polling client receives the current bundle through
+`SnapshotService.Fetch`, opens it locally with `cherry.OpenBundleZstd`, and runs
+REPL commands against the opened reader. In this mode, no diagnostic RPC is
+needed after fetch; command requests carry only the active Cherry scope.
+
+The example `yamlserver` demonstrates a server-side REPL over the current
+snapshot for the development lane. The debug handler first chooses the lane
+owned by the embedder, loads `snapshot.Manager.Current(lane)`, opens that
+snapshot's bundle, and then runs the REPL command against the requested Cherry
+scope. Production embedders that expose a similar endpoint must authenticate and
+authorize the caller for both the lane and the requested command/scope. Orange's
+shared protobuf fetch API should not grow a lane or scope selector for this
+debug path.
+
+The REPL command API is intentionally stateless for HTTP examples: each request
+contains a command line plus an optional active Cherry scope, and each response
+returns rendered text plus the resulting active scope and lane. Long-lived CLIs
+can keep that scope client-side between requests without adding mutable session
+state to Orange or Cherry.
+
 Secret handling is reference-only. Provider and MCP credentials inside
 `cherry.Input` must stay as refs such as:
 
