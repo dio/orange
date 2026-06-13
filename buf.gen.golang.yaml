@@ -6,7 +6,7 @@ managed:
       module: buf.build/bufbuild/protovalidate
   override:
     - file_option: go_package_prefix
-      value: github.com/tetrateio/fraser/orange/api
+      value: github.com/dio/orange/api
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.36.10
     out: api
