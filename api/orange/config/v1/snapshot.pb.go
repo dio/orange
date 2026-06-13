@@ -7,8 +7,10 @@
 package configv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -22,7 +24,7 @@ const (
 )
 
 // SnapshotEnvelope is the outermost frame delivered over gRPC or HTTP.
-// Payload contains a compressed (or raw) ConfigPayload proto.
+// Payload contains a compressed (or raw) ConfigPayload proto bytes.
 type SnapshotEnvelope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       uint64                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`  // monotonically increasing; receiver discards if <= last accepted
@@ -83,15 +85,279 @@ func (x *SnapshotEnvelope) GetChecksum() []byte {
 	return nil
 }
 
+// ConfigPayload is the typed wrapper for bundle bytes and their metadata.
+// Stored as the payload field of SnapshotEnvelope (optionally compressed).
+type ConfigPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Format        *PayloadFormat         `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
+	Metadata      *SnapshotMetadata      `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigPayload) Reset() {
+	*x = ConfigPayload{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigPayload) ProtoMessage() {}
+
+func (x *ConfigPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigPayload.ProtoReflect.Descriptor instead.
+func (*ConfigPayload) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ConfigPayload) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ConfigPayload) GetFormat() *PayloadFormat {
+	if x != nil {
+		return x.Format
+	}
+	return nil
+}
+
+func (x *ConfigPayload) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *ConfigPayload) GetMetadata() *SnapshotMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// PayloadFormat describes the encoding of the bundle bytes in ConfigPayload.payload.
+type PayloadFormat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MediaType     string                 `protobuf:"bytes,1,opt,name=media_type,json=mediaType,proto3" json:"media_type,omitempty"`
+	Encoding      string                 `protobuf:"bytes,2,opt,name=encoding,proto3" json:"encoding,omitempty"`
+	FormatVersion string                 `protobuf:"bytes,3,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PayloadFormat) Reset() {
+	*x = PayloadFormat{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PayloadFormat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PayloadFormat) ProtoMessage() {}
+
+func (x *PayloadFormat) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PayloadFormat.ProtoReflect.Descriptor instead.
+func (*PayloadFormat) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PayloadFormat) GetMediaType() string {
+	if x != nil {
+		return x.MediaType
+	}
+	return ""
+}
+
+func (x *PayloadFormat) GetEncoding() string {
+	if x != nil {
+		return x.Encoding
+	}
+	return ""
+}
+
+func (x *PayloadFormat) GetFormatVersion() string {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return ""
+}
+
+// SnapshotMetadata carries diagnostic and routing information for a snapshot.
+// Fields are opaque labels; no secret values, tenant keys, or user identifiers.
+type SnapshotMetadata struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Producer       string                 `protobuf:"bytes,1,opt,name=producer,proto3" json:"producer,omitempty"`
+	SourceRevision string                 `protobuf:"bytes,2,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Lane           string                 `protobuf:"bytes,4,opt,name=lane,proto3" json:"lane,omitempty"`
+	ScopeKind      string                 `protobuf:"bytes,5,opt,name=scope_kind,json=scopeKind,proto3" json:"scope_kind,omitempty"`
+	ScopeId        string                 `protobuf:"bytes,6,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
+	Scopes         []string               `protobuf:"bytes,7,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	PayloadSize    uint64                 `protobuf:"varint,8,opt,name=payload_size,json=payloadSize,proto3" json:"payload_size,omitempty"`
+	PayloadSha256  []byte                 `protobuf:"bytes,9,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SnapshotMetadata) Reset() {
+	*x = SnapshotMetadata{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotMetadata) ProtoMessage() {}
+
+func (x *SnapshotMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotMetadata.ProtoReflect.Descriptor instead.
+func (*SnapshotMetadata) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SnapshotMetadata) GetProducer() string {
+	if x != nil {
+		return x.Producer
+	}
+	return ""
+}
+
+func (x *SnapshotMetadata) GetSourceRevision() string {
+	if x != nil {
+		return x.SourceRevision
+	}
+	return ""
+}
+
+func (x *SnapshotMetadata) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *SnapshotMetadata) GetLane() string {
+	if x != nil {
+		return x.Lane
+	}
+	return ""
+}
+
+func (x *SnapshotMetadata) GetScopeKind() string {
+	if x != nil {
+		return x.ScopeKind
+	}
+	return ""
+}
+
+func (x *SnapshotMetadata) GetScopeId() string {
+	if x != nil {
+		return x.ScopeId
+	}
+	return ""
+}
+
+func (x *SnapshotMetadata) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *SnapshotMetadata) GetPayloadSize() uint64 {
+	if x != nil {
+		return x.PayloadSize
+	}
+	return 0
+}
+
+func (x *SnapshotMetadata) GetPayloadSha256() []byte {
+	if x != nil {
+		return x.PayloadSha256
+	}
+	return nil
+}
+
 var File_orange_config_v1_snapshot_proto protoreflect.FileDescriptor
 
 const file_orange_config_v1_snapshot_proto_rawDesc = "" +
 	"\n" +
-	"\x1forange/config/v1/snapshot.proto\x12\x10orange.config.v1\"b\n" +
+	"\x1forange/config/v1/snapshot.proto\x12\x10orange.config.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"b\n" +
 	"\x10SnapshotEnvelope\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x04R\aversion\x12\x18\n" +
 	"\apayload\x18\x04 \x01(\fR\apayload\x12\x1a\n" +
-	"\bchecksum\x18\x05 \x01(\fR\bchecksumB\xbc\x01\n" +
+	"\bchecksum\x18\x05 \x01(\fR\bchecksum\"\xdb\x01\n" +
+	"\rConfigPayload\x12.\n" +
+	"\x0eschema_version\x18\x01 \x01(\rB\a\xbaH\x04*\x02 \x00R\rschemaVersion\x127\n" +
+	"\x06format\x18\x02 \x01(\v2\x1f.orange.config.v1.PayloadFormatR\x06format\x12!\n" +
+	"\apayload\x18\x03 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\apayload\x12>\n" +
+	"\bmetadata\x18\x04 \x01(\v2\".orange.config.v1.SnapshotMetadataR\bmetadata\"\x83\x01\n" +
+	"\rPayloadFormat\x12&\n" +
+	"\n" +
+	"media_type\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tmediaType\x12#\n" +
+	"\bencoding\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bencoding\x12%\n" +
+	"\x0eformat_version\x18\x03 \x01(\tR\rformatVersion\"\xc3\x03\n" +
+	"\x10SnapshotMetadata\x12\x1a\n" +
+	"\bproducer\x18\x01 \x01(\tR\bproducer\x12'\n" +
+	"\x0fsource_revision\x18\x02 \x01(\tR\x0esourceRevision\x129\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x12\n" +
+	"\x04lane\x18\x04 \x01(\tR\x04lane\x12\x1d\n" +
+	"\n" +
+	"scope_kind\x18\x05 \x01(\tR\tscopeKind\x12\x19\n" +
+	"\bscope_id\x18\x06 \x01(\tR\ascopeId\x12\x16\n" +
+	"\x06scopes\x18\a \x03(\tR\x06scopes\x12!\n" +
+	"\fpayload_size\x18\b \x01(\x04R\vpayloadSize\x12\xa5\x01\n" +
+	"\x0epayload_sha256\x18\t \x01(\fB~\xbaH{\xba\x01x\n" +
+	"\x13metadata_sha256_len\x12:payload_sha256 must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\rpayloadSha256B\xbc\x01\n" +
 	"\x14com.orange.config.v1B\rSnapshotProtoP\x01Z3github.com/dio/orange/api/orange/config/v1;configv1\xa2\x02\x03OCX\xaa\x02\x10Orange.Config.V1\xca\x02\x10Orange\\Config\\V1\xe2\x02\x1cOrange\\Config\\V1\\GPBMetadata\xea\x02\x12Orange::Config::V1b\x06proto3"
 
 var (
@@ -106,16 +372,23 @@ func file_orange_config_v1_snapshot_proto_rawDescGZIP() []byte {
 	return file_orange_config_v1_snapshot_proto_rawDescData
 }
 
-var file_orange_config_v1_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_orange_config_v1_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_orange_config_v1_snapshot_proto_goTypes = []any{
-	(*SnapshotEnvelope)(nil), // 0: orange.config.v1.SnapshotEnvelope
+	(*SnapshotEnvelope)(nil),      // 0: orange.config.v1.SnapshotEnvelope
+	(*ConfigPayload)(nil),         // 1: orange.config.v1.ConfigPayload
+	(*PayloadFormat)(nil),         // 2: orange.config.v1.PayloadFormat
+	(*SnapshotMetadata)(nil),      // 3: orange.config.v1.SnapshotMetadata
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_orange_config_v1_snapshot_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: orange.config.v1.ConfigPayload.format:type_name -> orange.config.v1.PayloadFormat
+	3, // 1: orange.config.v1.ConfigPayload.metadata:type_name -> orange.config.v1.SnapshotMetadata
+	4, // 2: orange.config.v1.SnapshotMetadata.created_at:type_name -> google.protobuf.Timestamp
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_orange_config_v1_snapshot_proto_init() }
@@ -129,7 +402,7 @@ func file_orange_config_v1_snapshot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orange_config_v1_snapshot_proto_rawDesc), len(file_orange_config_v1_snapshot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

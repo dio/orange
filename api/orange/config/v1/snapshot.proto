@@ -2,10 +2,47 @@ syntax = "proto3";
 
 package orange.config.v1;
 
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
 // SnapshotEnvelope is the outermost frame delivered over gRPC or HTTP.
-// Payload contains a compressed (or raw) ConfigPayload proto.
+// Payload contains a compressed (or raw) ConfigPayload proto bytes.
 message SnapshotEnvelope {
   uint64 version = 1; // monotonically increasing; receiver discards if <= last accepted
   bytes payload = 4; // compressed ConfigPayload proto bytes
   bytes checksum = 5; // SHA-256 of the decompressed payload bytes
+}
+
+// ConfigPayload is the typed wrapper for bundle bytes and their metadata.
+// Stored as the payload field of SnapshotEnvelope (optionally compressed).
+message ConfigPayload {
+  uint32 schema_version = 1 [(buf.validate.field).uint32.gt = 0];
+  PayloadFormat format = 2;
+  bytes payload = 3 [(buf.validate.field).bytes.min_len = 1];
+  SnapshotMetadata metadata = 4;
+}
+
+// PayloadFormat describes the encoding of the bundle bytes in ConfigPayload.payload.
+message PayloadFormat {
+  string media_type = 1 [(buf.validate.field).string.min_len = 1];
+  string encoding = 2 [(buf.validate.field).string.min_len = 1];
+  string format_version = 3;
+}
+
+// SnapshotMetadata carries diagnostic and routing information for a snapshot.
+// Fields are opaque labels; no secret values, tenant keys, or user identifiers.
+message SnapshotMetadata {
+  string producer = 1;
+  string source_revision = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string lane = 4;
+  string scope_kind = 5;
+  string scope_id = 6;
+  repeated string scopes = 7;
+  uint64 payload_size = 8;
+  bytes payload_sha256 = 9 [(buf.validate.field).cel = {
+    id: "metadata_sha256_len"
+    message: "payload_sha256 must be empty or exactly 32 bytes (SHA-256)"
+    expression: "this.size() == 0 || this.size() == 32"
+  }];
 }

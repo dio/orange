@@ -11,7 +11,6 @@ import (
 	_ "github.com/dio/orange/api/orange/auth/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	_ "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -25,7 +24,17 @@ const (
 )
 
 type PublishSnapshotRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// expected_version is the version the caller expects to currently be active.
+	// Set to 0 to skip the optimistic concurrency check.
+	ExpectedVersion uint64 `protobuf:"varint,1,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	// expected_checksum is the SHA-256 the caller expects for the current snapshot.
+	// When present it must be exactly 32 bytes. Omit for an unconditional publish.
+	ExpectedChecksum []byte `protobuf:"bytes,2,opt,name=expected_checksum,json=expectedChecksum,proto3" json:"expected_checksum,omitempty"`
+	// prepared_data is the serialized ConfigPayload proto bytes to publish.
+	// Remote admin clients should normally provide this. May be empty for
+	// in-process publish paths where data is supplied through a callback.
+	PreparedData  []byte `protobuf:"bytes,3,opt,name=prepared_data,json=preparedData,proto3" json:"prepared_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -60,8 +69,37 @@ func (*PublishSnapshotRequest) Descriptor() ([]byte, []int) {
 	return file_orange_config_admin_v1_admin_proto_rawDescGZIP(), []int{0}
 }
 
+func (x *PublishSnapshotRequest) GetExpectedVersion() uint64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+func (x *PublishSnapshotRequest) GetExpectedChecksum() []byte {
+	if x != nil {
+		return x.ExpectedChecksum
+	}
+	return nil
+}
+
+func (x *PublishSnapshotRequest) GetPreparedData() []byte {
+	if x != nil {
+		return x.PreparedData
+	}
+	return nil
+}
+
 type PublishSnapshotResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// previous_version is the version that was active before this publish.
+	PreviousVersion uint64 `protobuf:"varint,1,opt,name=previous_version,json=previousVersion,proto3" json:"previous_version,omitempty"`
+	// published_version is the version assigned to the newly published snapshot.
+	PublishedVersion uint64 `protobuf:"varint,2,opt,name=published_version,json=publishedVersion,proto3" json:"published_version,omitempty"`
+	// published_checksum is the SHA-256 of the published decompressed payload.
+	PublishedChecksum []byte `protobuf:"bytes,3,opt,name=published_checksum,json=publishedChecksum,proto3" json:"published_checksum,omitempty"`
+	// scopes lists the scope labels included in the published snapshot.
+	Scopes        []string `protobuf:"bytes,4,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -96,13 +134,49 @@ func (*PublishSnapshotResponse) Descriptor() ([]byte, []int) {
 	return file_orange_config_admin_v1_admin_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *PublishSnapshotResponse) GetPreviousVersion() uint64 {
+	if x != nil {
+		return x.PreviousVersion
+	}
+	return 0
+}
+
+func (x *PublishSnapshotResponse) GetPublishedVersion() uint64 {
+	if x != nil {
+		return x.PublishedVersion
+	}
+	return 0
+}
+
+func (x *PublishSnapshotResponse) GetPublishedChecksum() []byte {
+	if x != nil {
+		return x.PublishedChecksum
+	}
+	return nil
+}
+
+func (x *PublishSnapshotResponse) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
 var File_orange_config_admin_v1_admin_proto protoreflect.FileDescriptor
 
 const file_orange_config_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\"orange/config/admin/v1/admin.proto\x12\x16orange.config.admin.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!orange/auth/v1/auth_options.proto\"\x18\n" +
-	"\x16PublishSnapshotRequest\"\x19\n" +
-	"\x17PublishSnapshotResponse2\x99\x01\n" +
+	"\"orange/config/admin/v1/admin.proto\x12\x16orange.config.admin.v1\x1a\x1bbuf/validate/validate.proto\x1a!orange/auth/v1/auth_options.proto\"\xad\x02\n" +
+	"\x16PublishSnapshotRequest\x12)\n" +
+	"\x10expected_version\x18\x01 \x01(\x04R\x0fexpectedVersion\x12\xc2\x01\n" +
+	"\x11expected_checksum\x18\x02 \x01(\fB\x94\x01\xbaH\x90\x01\xba\x01\x8c\x01\n" +
+	"$publish_expected_checksum_sha256_len\x12=expected_checksum must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\x10expectedChecksum\x12#\n" +
+	"\rprepared_data\x18\x03 \x01(\fR\fpreparedData\"\xb8\x01\n" +
+	"\x17PublishSnapshotResponse\x12)\n" +
+	"\x10previous_version\x18\x01 \x01(\x04R\x0fpreviousVersion\x12+\n" +
+	"\x11published_version\x18\x02 \x01(\x04R\x10publishedVersion\x12-\n" +
+	"\x12published_checksum\x18\x03 \x01(\fR\x11publishedChecksum\x12\x16\n" +
+	"\x06scopes\x18\x04 \x03(\tR\x06scopes2\x99\x01\n" +
 	"\x12ConfigAdminService\x12\x82\x01\n" +
 	"\x0fPublishSnapshot\x12..orange.config.admin.v1.PublishSnapshotRequest\x1a/.orange.config.admin.v1.PublishSnapshotResponse\"\x0e\xc2\xf3\x18\n" +
 	"\n" +

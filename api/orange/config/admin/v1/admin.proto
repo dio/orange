@@ -3,7 +3,6 @@ syntax = "proto3";
 package orange.config.admin.v1;
 
 import "buf/validate/validate.proto";
-import "google/protobuf/timestamp.proto";
 import "orange/auth/v1/auth_options.proto";
 
 service ConfigAdminService {
@@ -17,6 +16,35 @@ service ConfigAdminService {
   }
 }
 
-message PublishSnapshotRequest {}
+message PublishSnapshotRequest {
+  // expected_version is the version the caller expects to currently be active.
+  // Set to 0 to skip the optimistic concurrency check.
+  uint64 expected_version = 1;
 
-message PublishSnapshotResponse {}
+  // expected_checksum is the SHA-256 the caller expects for the current snapshot.
+  // When present it must be exactly 32 bytes. Omit for an unconditional publish.
+  bytes expected_checksum = 2 [(buf.validate.field).cel = {
+    id: "publish_expected_checksum_sha256_len"
+    message: "expected_checksum must be empty or exactly 32 bytes (SHA-256)"
+    expression: "this.size() == 0 || this.size() == 32"
+  }];
+
+  // prepared_data is the serialized ConfigPayload proto bytes to publish.
+  // Remote admin clients should normally provide this. May be empty for
+  // in-process publish paths where data is supplied through a callback.
+  bytes prepared_data = 3;
+}
+
+message PublishSnapshotResponse {
+  // previous_version is the version that was active before this publish.
+  uint64 previous_version = 1;
+
+  // published_version is the version assigned to the newly published snapshot.
+  uint64 published_version = 2;
+
+  // published_checksum is the SHA-256 of the published decompressed payload.
+  bytes published_checksum = 3;
+
+  // scopes lists the scope labels included in the published snapshot.
+  repeated string scopes = 4;
+}

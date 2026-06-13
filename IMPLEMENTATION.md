@@ -52,8 +52,8 @@ diagnostic metadata, and admin publishing can pass prepared data into the
 snapshot manager without inventing a second service.
 
 **Status (2026-06-13):**
-- Task 1.1 — pending.
-- Task 1.2 — pending.
+- Task 1.1 — done.
+- Task 1.2 — done.
 
 ### Task 1.1 — Add `ConfigPayload` wrapper
 
