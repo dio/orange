@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package orange.config.v1;
+
+// SnapshotEnvelope is the outermost frame delivered over gRPC or HTTP.
+// Payload contains a compressed (or raw) ConfigPayload proto.
+message SnapshotEnvelope {
+  uint64 version = 1; // monotonically increasing; receiver discards if <= last accepted
+  bytes payload = 4; // compressed ConfigPayload proto bytes
+  bytes checksum = 5; // SHA-256 of the decompressed payload bytes
+}

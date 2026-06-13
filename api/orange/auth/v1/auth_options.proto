@@ -1,0 +1,47 @@
+// auth_options.proto — method-level authentication annotations for orange services.
+//
+// Apply the `auth` extension to any RPC that requires authentication. Methods
+// without this annotation are treated as public (no auth required).
+//
+// Example usage in a service proto:
+//
+//   rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse) {
+//     option (orange.auth.v1.auth) = {
+//       auth_types: [AUTH_TYPE_API_KEY]
+//       scopes: ["admin"]
+//     };
+//     option idempotency_level = NO_SIDE_EFFECTS;
+//   }
+
+syntax = "proto3";
+
+package orange.auth.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// AuthType identifies the credential mechanism the caller must present.
+enum AuthType {
+  AUTH_TYPE_UNSPECIFIED = 0;
+  AUTH_TYPE_API_KEY = 1; // static API key issued by the admin plane
+  AUTH_TYPE_SERVICE_ACCOUNT = 2; // short-lived JWT from a service account
+  AUTH_TYPE_CLIENT_ASSERTION = 3; // Ed25519-signed assertion from an client keypair
+}
+
+// AuthOptions declares authentication requirements for a single RPC method.
+// Place exactly one `auth` extension per method that must be authenticated.
+// If multiple auth_types are listed, any one of them satisfies the requirement.
+message AuthOptions {
+  // auth_types lists the credential mechanisms accepted for this method.
+  // Empty means any valid credential is accepted.
+  repeated AuthType auth_types = 1;
+
+  // scopes lists fine-grained permission tokens required in addition to
+  // auth_types. All listed scopes must be present in the caller's credential.
+  // Common values: "admin", "read", "write".
+  repeated string scopes = 2;
+}
+
+// auth is the method-level extension for per-RPC authentication requirements.
+extend google.protobuf.MethodOptions {
+  AuthOptions auth = 51000;
+}
