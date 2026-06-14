@@ -35,17 +35,23 @@ type Store interface {
 // MemoryStore is an in-process Store implementation for tests, examples, and
 // single-replica deployments.
 type MemoryStore struct {
-	mu      sync.RWMutex
-	version uint64
-	items   map[string]*snapshot.Snapshot
-	maps    map[string]*configv1.MappedSplitSnapshot
+	mu            sync.RWMutex
+	version       uint64
+	items         map[string]*snapshot.Snapshot
+	maps          map[string]*configv1.MappedSplitSnapshot
+	buildLocks    map[string]*sync.Mutex
+	buildVersions map[string]int64
+	dirty         map[string]BuildRequest
 }
 
 // NewMemoryStore creates an empty in-memory mapped-split store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		items: map[string]*snapshot.Snapshot{},
-		maps:  map[string]*configv1.MappedSplitSnapshot{},
+		items:         map[string]*snapshot.Snapshot{},
+		maps:          map[string]*configv1.MappedSplitSnapshot{},
+		buildLocks:    map[string]*sync.Mutex{},
+		buildVersions: map[string]int64{},
+		dirty:         map[string]BuildRequest{},
 	}
 }
 
@@ -123,6 +129,82 @@ func (s *MemoryStore) FetchMappedSplitMap(_ context.Context, lane string, lastVe
 		return nil, true, nil
 	}
 	return proto.Clone(typedMap).(*configv1.MappedSplitSnapshot), false, nil
+}
+
+// MarkMappedSplitDirty records the latest dirty build request for lane.
+func (s *MemoryStore) MarkMappedSplitDirty(_ context.Context, req BuildRequest) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.dirty[req.Lane] = req
+	return nil
+}
+
+// GetMappedSplitBuildRequest returns the dirty build request for lane.
+func (s *MemoryStore) GetMappedSplitBuildRequest(_ context.Context, lane string) (*BuildRequest, error) {
+	if lane == "" {
+		return nil, fmt.Errorf("build request lane is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	req, ok := s.dirty[lane]
+	if !ok {
+		return nil, nil
+	}
+	return &req, nil
+}
+
+// ClearMappedSplitDirty clears the dirty request for lease.Lane.
+func (s *MemoryStore) ClearMappedSplitDirty(_ context.Context, lease BuildLease, _ uint64) error {
+	if lease.Lane == "" {
+		return fmt.Errorf("%w: invalid build lease", ErrBuildLeaseLost)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.dirty, lease.Lane)
+	return nil
+}
+
+// WithMappedSplitBuildLease serializes build callbacks per lane.
+func (s *MemoryStore) WithMappedSplitBuildLease(ctx context.Context, lane string, fn func(context.Context, BuildLease) error) error {
+	if lane == "" {
+		return fmt.Errorf("build lease lane is required")
+	}
+	if fn == nil {
+		return fmt.Errorf("build lease callback is required")
+	}
+
+	lock := s.buildLock(lane)
+	lock.Lock()
+	defer lock.Unlock()
+
+	s.mu.Lock()
+	s.buildVersions[lane]++
+	lease := BuildLease{
+		Lane:         lane,
+		HolderID:     "memory",
+		LeaseVersion: s.buildVersions[lane],
+	}
+	s.mu.Unlock()
+
+	return fn(ctx, lease)
+}
+
+func (s *MemoryStore) buildLock(lane string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	lock := s.buildLocks[lane]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.buildLocks[lane] = lock
+	}
+	return lock
 }
 
 func samePayload(current *configv1.ConfigPayload, next *configv1.ConfigPayload) bool {

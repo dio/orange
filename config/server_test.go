@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,24 +99,169 @@ func TestServerUsesConfiguredStore(t *testing.T) {
 	require.Equal(t, int32(1), store.publishCalls.Load())
 }
 
+func TestServerColdStartConcurrentFetchesBuildOnce(t *testing.T) {
+	store := NewMemoryStore()
+	var builds atomic.Int32
+	s := testServerWithOptions(ServerOptions{
+		Store: store,
+		OnDemandBuild: func(_ context.Context, req BuildRequest) (MappedSplitRequest, error) {
+			builds.Add(1)
+			time.Sleep(20 * time.Millisecond)
+			return testMappedSplitRequest(req.Lane, 1), nil
+		},
+	})
+
+	client, cleanup := startServerClient(t, s)
+	defer cleanup()
+
+	const callers = 16
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, callers)
+	revisions := make(chan uint64, callers)
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			<-start
+			req := connectRequestFetchMap()
+			req.Header().Set("x-orange-lane", "lane-a")
+			resp, err := client.FetchMappedSplitMap(context.Background(), req)
+			if err != nil {
+				errs <- err
+				return
+			}
+			snap := resp.Msg.GetSnapshot()
+			if snap == nil {
+				errs <- context.Canceled
+				return
+			}
+			revisions <- snap.Map.MapRevision
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	close(revisions)
+
+	require.Empty(t, errs)
+	require.Equal(t, int32(1), builds.Load())
+	require.Len(t, revisions, callers)
+	for revision := range revisions {
+		require.Equal(t, uint64(1), revision)
+	}
+}
+
+func TestServerColdStartSkipsCallbackWhenCurrentAppearsWhileWaitingForLease(t *testing.T) {
+	store := &waitingLeaseStore{
+		MemoryStore:    NewMemoryStore(),
+		leaseRequested: make(chan struct{}),
+		allowLease:     make(chan struct{}),
+	}
+	var builds atomic.Int32
+	s := testServerWithOptions(ServerOptions{
+		Store: store,
+		OnDemandBuild: func(_ context.Context, req BuildRequest) (MappedSplitRequest, error) {
+			builds.Add(1)
+			return testMappedSplitRequest(req.Lane, 2), nil
+		},
+	})
+	client, cleanup := startServerClient(t, s)
+	defer cleanup()
+
+	respCh := make(chan *configv1.FetchMappedSplitMapResponse, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		req := connectRequestFetchMap()
+		req.Header().Set("x-orange-lane", "lane-a")
+		resp, err := client.FetchMappedSplitMap(context.Background(), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp.Msg
+	}()
+
+	select {
+	case <-store.leaseRequested:
+	case <-time.After(time.Second):
+		t.Fatal("fetch did not wait for build lease")
+	}
+
+	_, err := store.PublishMappedSplit(context.Background(), testBuildOutput(t, context.Background(), "lane-a", 1))
+	require.NoError(t, err)
+	close(store.allowLease)
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case resp := <-respCh:
+		snap := resp.GetSnapshot()
+		require.NotNil(t, snap)
+		require.Equal(t, uint64(1), snap.Map.MapRevision)
+	case <-time.After(time.Second):
+		t.Fatal("fetch did not complete")
+	}
+	require.Equal(t, int32(0), builds.Load())
+}
+
 func testServer() *Server {
-	return NewServer(ServerOptions{
-		Producer: "config-server-test",
-		Clock:    func() time.Time { return time.Date(2026, 6, 14, 0, 0, 0, 0, time.UTC) },
-		Authenticator: AuthenticatorFunc(func(_ context.Context, header http.Header) (ServerPrincipal, error) {
+	return testServerWithOptions(ServerOptions{})
+}
+
+func testServerWithOptions(opts ServerOptions) *Server {
+	if opts.Producer == "" {
+		opts.Producer = "config-server-test"
+	}
+	if opts.Clock == nil {
+		opts.Clock = func() time.Time { return time.Date(2026, 6, 14, 0, 0, 0, 0, time.UTC) }
+	}
+	if opts.Authenticator == nil {
+		opts.Authenticator = AuthenticatorFunc(func(_ context.Context, header http.Header) (ServerPrincipal, error) {
 			lane := header.Get("x-orange-lane")
 			if lane == "" {
 				return ServerPrincipal{}, ErrUnauthenticated
 			}
 			return ServerPrincipal{ID: lane}, nil
-		}),
-		LaneResolver: LaneResolverFunc(func(_ context.Context, principal ServerPrincipal) (string, error) {
+		})
+	}
+	if opts.LaneResolver == nil {
+		opts.LaneResolver = LaneResolverFunc(func(_ context.Context, principal ServerPrincipal) (string, error) {
 			if principal.ID == "" {
 				return "", ErrPermissionDenied
 			}
 			return principal.ID, nil
-		}),
-	})
+		})
+	}
+	return NewServer(opts)
+}
+
+func startServerClient(t *testing.T, s *Server) (configv1connect.SnapshotServiceClient, func()) {
+	t.Helper()
+	mux := http.NewServeMux()
+	s.Mount(mux)
+	httpServer := httptest.NewServer(mux)
+	cleanup := func() { httpServer.Close() }
+	return configv1connect.NewSnapshotServiceClient(httpServer.Client(), httpServer.URL), cleanup
+}
+
+type waitingLeaseStore struct {
+	*MemoryStore
+	leaseRequested chan struct{}
+	allowLease     chan struct{}
+	entered        atomic.Bool
+}
+
+func (s *waitingLeaseStore) WithMappedSplitBuildLease(ctx context.Context, lane string, fn func(context.Context, BuildLease) error) error {
+	if s.entered.CompareAndSwap(false, true) {
+		close(s.leaseRequested)
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.allowLease:
+		return fn(ctx, BuildLease{Lane: lane, HolderID: "waiting-store", LeaseVersion: 1})
+	}
 }
 
 type recordingStore struct {

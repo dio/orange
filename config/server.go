@@ -60,6 +60,7 @@ type ServerOptions struct {
 
 	ResourceForComponent func(component string) string
 	HandlerOptions       []connect.HandlerOption
+	OnDemandBuild        OnDemandBuildFunc
 }
 
 // MappedSplitRequest describes one complete mapped-split publication.
@@ -91,6 +92,7 @@ type Server struct {
 	auth           Authenticator
 	lanes          LaneResolver
 	handlerOptions []connect.HandlerOption
+	onDemandBuild  OnDemandBuildFunc
 }
 
 // NewServer creates a mapped-split server facade. Without auth hooks, fetches
@@ -118,12 +120,24 @@ func NewServer(opts ServerOptions) *Server {
 		auth:           auth,
 		lanes:          lanes,
 		handlerOptions: append([]connect.HandlerOption(nil), opts.HandlerOptions...),
+		onDemandBuild:  opts.OnDemandBuild,
 	}
 }
 
 // Handler returns the Connect SnapshotService mount path and handler.
 func (s *Server) Handler() (string, http.Handler) {
-	svc := NewSnapshotServiceWithProviders(s.store, s.auth, s.lanes, s.store)
+	mappedSplit := MappedSplitMapProvider(s.store)
+	if s.onDemandBuild != nil {
+		if coordinator, ok := s.store.(BuildCoordinator); ok {
+			mappedSplit = &coldStartMappedSplitProvider{
+				store:       s.store,
+				coordinator: coordinator,
+				builder:     s.builder,
+				build:       s.onDemandBuild,
+			}
+		}
+	}
+	svc := NewSnapshotServiceWithProviders(s.store, s.auth, s.lanes, mappedSplit)
 	return configv1connect.NewSnapshotServiceHandler(svc, s.handlerOptions...)
 }
 
