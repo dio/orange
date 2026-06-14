@@ -8,10 +8,17 @@ import (
 	"github.com/dio/cherry"
 )
 
-// ComponentFetcher fetches the component bundle bytes referenced by ref. It is
+// ComponentPayload is the fetched component bundle bytes plus diagnostic
+// metadata from the Orange snapshot wrapper.
+type ComponentPayload struct {
+	BundleZstd     []byte
+	SourceRevision string
+}
+
+// ComponentFetcher fetches the component bundle referenced by ref. It is
 // commonly backed by one FetchMappedSplitBundle client per resource inside the
 // authenticated lane.
-type ComponentFetcher func(ctx context.Context, ref BundleRef) ([]byte, bool, error)
+type ComponentFetcher func(ctx context.Context, ref BundleRef) (ComponentPayload, bool, error)
 
 // ApplyStats reports how a split map was applied relative to the previous view.
 type ApplyStats struct {
@@ -22,8 +29,9 @@ type ApplyStats struct {
 
 // OpenedComponent is an opened Cherry component plus the ref that selected it.
 type OpenedComponent struct {
-	Ref    BundleRef
-	Opened cherry.OpenedBundle
+	Ref            BundleRef
+	SourceRevision string
+	Opened         cherry.OpenedBundle
 }
 
 // Opened is the active, queryable mapped-split view.
@@ -162,7 +170,7 @@ func openRef(
 	if ref.ID == "" || ref.Resource == "" || ref.Component == "" {
 		return OpenedComponent{}, fmt.Errorf("bundle ref must include id, resource, and component")
 	}
-	if sameRef(previous.Ref, ref) && sameGeneration(previous.Opened.Metadata, splitMap) {
+	if sameRef(previous.Ref, ref) {
 		stats.Reused++
 		return previous, nil
 	}
@@ -173,14 +181,14 @@ func openRef(
 	if !unchanged {
 		stats.Fetched++
 	}
-	opened, err := cherry.OpenBundleZstd(payload)
+	opened, err := cherry.OpenBundleZstd(payload.BundleZstd)
 	if err != nil {
 		return OpenedComponent{}, err
 	}
 	if err := validateOpened(ref, splitMap, opened); err != nil {
 		return OpenedComponent{}, err
 	}
-	return OpenedComponent{Ref: ref, Opened: opened}, nil
+	return OpenedComponent{Ref: ref, SourceRevision: payload.SourceRevision, Opened: opened}, nil
 }
 
 func validateOpened(ref BundleRef, splitMap SplitMap, opened cherry.OpenedBundle) error {
@@ -189,9 +197,6 @@ func validateOpened(ref BundleRef, splitMap SplitMap, opened cherry.OpenedBundle
 	}
 	if opened.Metadata.ScopeID != splitMap.ScopeID {
 		return fmt.Errorf("scope ID mismatch: map=%q bundle=%q", splitMap.ScopeID, opened.Metadata.ScopeID)
-	}
-	if opened.Metadata.GenerationID != splitMap.GenerationID {
-		return fmt.Errorf("generation mismatch: map=%q bundle=%q", splitMap.GenerationID, opened.Metadata.GenerationID)
 	}
 	if !sameStrings(opened.Metadata.Scopes, splitMap.Scopes) {
 		return fmt.Errorf("concrete scopes mismatch")
@@ -296,13 +301,6 @@ func validateRefIdentity(lane string, ref BundleRef) error {
 		return fmt.Errorf("split map %s ref has id %q but component %q", lane, ref.ID, ref.Component)
 	}
 	return nil
-}
-
-func sameGeneration(metadata cherry.BundleMetadata, splitMap SplitMap) bool {
-	return metadata.GenerationID == splitMap.GenerationID &&
-		metadata.ScopeKind == splitMap.ScopeKind &&
-		metadata.ScopeID == splitMap.ScopeID &&
-		sameStrings(metadata.Scopes, splitMap.Scopes)
 }
 
 func sameStrings(a []string, b []string) bool {

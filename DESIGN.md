@@ -146,7 +146,12 @@ catalogs, defaults, direct paths, or platform secret refs change.
 For an N+1 update, build changed component payloads first, keep unchanged
 component resources unchanged, publish a new map revision that references the
 changed refs and omits removed partitions, and make the new map visible only
-after every referenced component resource is readable.
+after every referenced component resource is readable. A map generation is a
+diagnostic label for the map revision, not a requirement that every referenced
+component payload was rebuilt under that same generation label. Consumers reuse
+or validate components by ref identity, scope, concrete scopes, pack checksum,
+and size. This keeps unchanged components reusable when only one partition's
+payload changes.
 
 ## `config.Server`
 
@@ -379,19 +384,25 @@ FetchMappedSplitMap(last_version, last_checksum)
   -> FetchMappedSplitBundle(resource, last_version, last_checksum) for missing/stale refs
   -> validate ConfigPayload and media type
   -> open Cherry bundle
-  -> validate scope/generation/checksum/size against map
+  -> validate scope/checksum/size against map
   -> publish next immutable active view
 ```
 
 When the map is `Unchanged`, the consumer does not inspect component resources.
 When a map changes, matching refs are reused, missing or stale refs are fetched,
-and omitted refs are dropped.
+and omitted refs are dropped. Matching component refs are reusable across map
+generation changes; new consumers that fetch reused resources validate the ref's
+checksum and size instead of requiring the component bundle's Cherry generation
+metadata to match the map generation.
 
 `config.Client` is the high-level consumer facade. It owns typed-map polling,
 per-resource version/checksum state, component resource fetching, media-type
 validation, `mappedsplit.Open` application, and the current immutable opened
 view. Consumers can call `FetchMap` or `FetchBundle` for diagnostics, or `Sync`
 for normal map-diff/component-fetch/open behavior.
+`mappedsplit.OpenedComponent` retains the component
+`SnapshotMetadata.source_revision` observed during fetch so data planes can
+expose component source diagnostics without request-time bundle fetches.
 
 ## Package Shape
 

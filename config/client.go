@@ -268,12 +268,15 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		}, nil
 	}
 
-	next, stats, err := mappedsplit.Open(ctx, current, mapResult.Map, func(ctx context.Context, ref mappedsplit.BundleRef) ([]byte, bool, error) {
+	next, stats, err := mappedsplit.Open(ctx, current, mapResult.Map, func(ctx context.Context, ref mappedsplit.BundleRef) (mappedsplit.ComponentPayload, bool, error) {
 		result, err := c.FetchBundle(ctx, ref.Resource)
 		if err != nil {
-			return nil, false, fmt.Errorf("fetch component %s resource %s: %w", ref.Component, ref.Resource, err)
+			return mappedsplit.ComponentPayload{}, false, fmt.Errorf("fetch component %s resource %s: %w", ref.Component, ref.Resource, err)
 		}
-		return result.BundleZstd, result.Unchanged, nil
+		return mappedsplit.ComponentPayload{
+			BundleZstd:     result.BundleZstd,
+			SourceRevision: result.Payload.GetMetadata().GetSourceRevision(),
+		}, result.Unchanged, nil
 	})
 	if err != nil {
 		resultLabel = "error"

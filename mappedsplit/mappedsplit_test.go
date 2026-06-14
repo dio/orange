@@ -21,6 +21,7 @@ func TestBuildOpenReuseAndOmit(t *testing.T) {
 	current, stats, err := Open(ctx, nil, initial.Map, componentFetcher(initial))
 	require.NoError(t, err)
 	require.Equal(t, ApplyStats{Fetched: 6}, stats)
+	require.Equal(t, "test", current.LLMGeneric.SourceRevision)
 
 	llm, ok := current.ResolveLLM("prod", "slug:alice", "gpt-4o-mini")
 	require.True(t, ok)
@@ -45,6 +46,33 @@ func TestBuildOpenReuseAndOmit(t *testing.T) {
 	require.Equal(t, "orange://alice/openai-updated", llm.SecretRef)
 	_, ok = current.ResolveMCP("prod", "profile-dev-tools")
 	require.False(t, ok)
+}
+
+func TestOpenReusesMatchingRefsAcrossMapGenerationChange(t *testing.T) {
+	ctx := context.Background()
+	spec := cherry.MappedSplitSpec{LLMUserKeyPartitions: 2, MCPUserProfilePartitions: 2}
+	builder := NewBuilder(BuildOptions{Producer: "test"})
+
+	initial, err := builder.Build(ctx, buildRequest(spec, "gen1", 1, testInput("orange://alice/openai"), -1))
+	require.NoError(t, err)
+
+	current, stats, err := Open(ctx, nil, initial.Map, componentFetcher(initial))
+	require.NoError(t, err)
+	require.Equal(t, ApplyStats{Fetched: 6}, stats)
+
+	nextMap := initial.Map
+	nextMap.GenerationID = "gen2"
+	nextMap.MapRevision = 2
+
+	current, stats, err = Open(ctx, current, nextMap, func(context.Context, BundleRef) (ComponentPayload, bool, error) {
+		t.Fatal("matching refs should be reused without fetching")
+		return ComponentPayload{}, false, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, ApplyStats{Reused: 6}, stats)
+	require.Equal(t, "gen2", current.Map.GenerationID)
+	require.Equal(t, "gen1", current.LLMGeneric.Opened.Metadata.GenerationID)
+	require.Equal(t, "test", current.LLMGeneric.SourceRevision)
 }
 
 func buildRequest(spec cherry.MappedSplitSpec, generation string, revision int, input cherry.Input, omitMCPPartition int) BuildRequest {
@@ -83,8 +111,12 @@ func buildRequest(spec cherry.MappedSplitSpec, generation string, revision int, 
 }
 
 func componentFetcher(out BuildOutput) ComponentFetcher {
-	return func(_ context.Context, ref BundleRef) ([]byte, bool, error) {
-		return out.Components[ref.Component].BundleZstd, false, nil
+	return func(_ context.Context, ref BundleRef) (ComponentPayload, bool, error) {
+		component := out.Components[ref.Component]
+		return ComponentPayload{
+			BundleZstd:     component.BundleZstd,
+			SourceRevision: component.Payload.GetMetadata().GetSourceRevision(),
+		}, false, nil
 	}
 }
 

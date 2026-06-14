@@ -156,6 +156,7 @@ func TestClientSyncWithServer(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, first.Opened)
 	require.Equal(t, 4, first.Stats.Fetched)
+	require.Equal(t, "rev-1", first.Opened.LLMGeneric.SourceRevision)
 
 	llm, ok := first.Opened.ResolveLLM("prod", "slug:alice", "gpt-4o-mini")
 	require.True(t, ok)

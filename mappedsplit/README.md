@@ -167,18 +167,23 @@ if err != nil {
 }
 
 next, stats, err := mappedsplit.Open(ctx, current, splitMap,
-	func(ctx context.Context, ref mappedsplit.BundleRef) ([]byte, bool, error) {
+	func(ctx context.Context, ref mappedsplit.BundleRef) (mappedsplit.ComponentPayload, bool, error) {
 		result, err := fetchBundleResource(ctx, ref.Resource)
 		if err != nil {
-			return nil, false, err
+			return mappedsplit.ComponentPayload{}, false, err
 		}
-		return result.BundleZstd, result.Unchanged, nil
+		return mappedsplit.ComponentPayload{
+			BundleZstd:     result.BundleZstd,
+			SourceRevision: result.Payload.GetMetadata().GetSourceRevision(),
+		}, result.Unchanged, nil
 	})
 ```
 
 `Open` diffs refs against the current opened view, reuses matching readers,
 fetches only missing or stale component resources, and omits partitions that no
-longer appear in the map.
+longer appear in the map. Matching refs are reused across map generation
+changes, so unchanged components are not re-fetched or re-opened solely because
+the producer assigned a new map generation label.
 
 ## Runtime Queries
 
