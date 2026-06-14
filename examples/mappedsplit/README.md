@@ -15,6 +15,12 @@ Run the server in one terminal:
 go run ./examples/mappedsplit server --addr 127.0.0.1:8090 --partitions 4
 ```
 
+The server builds from watched YAML files in `examples/mappedsplit/data` by
+default. Edit `examples/mappedsplit/data/input.yaml` while the server and client
+are running; the server polls the directory, publishes a new mapped-split
+snapshot, and the client will pick it up on its next sync. Use `--input-dir` to
+point at another directory of `.yaml` or `.yml` files.
+
 For a durable local run, add `--local`. The server starts embedded Postgres,
 stores data under `.mappedsplit`, applies Orange store migrations, installs
 PgQue, constructs `config.PgStore`, and schedules builds through
@@ -55,7 +61,7 @@ The REPL keeps polling in the background. When the server publishes a newer map,
 the client prints a notification such as:
 
 ```text
-notification: mapped split changed lane=lane-a map_version=2 checksum=... generation=gen-demo revision=2 fetched=1 reused=8 omitted=1
+notification: mapped split changed lane=lane-a map_version=2 checksum=... generation=gen-demo revision=2 fetched=2 reused=8 omitted=0
 ```
 
 Use `client apply` for the older non-interactive polling output:
@@ -93,6 +99,9 @@ Trigger the n+1 update from a third terminal:
 ```sh
 curl -XPOST http://127.0.0.1:8090/debug/nplus1
 ```
+
+This writes an override YAML file under the watched input directory and then
+publishes or schedules the rebuild.
 
 Or let the client trigger it once:
 
@@ -140,11 +149,10 @@ The output shows the map snapshot version and component application stats:
 
 ```text
 map version=1 checksum=... unchanged=false generation=gen-demo revision=1 fetched=10 reused=0 omitted=0
-map version=... checksum=... unchanged=false generation=gen-demo revision=2 fetched=1 reused=8 omitted=1
+map version=... checksum=... unchanged=false generation=gen-demo revision=2 fetched=2 reused=8 omitted=0
 ```
 
-The n+1 update changes Alice's LLM user-key partition and removes the MCP
-profile partition containing `profile-dev-tools`. Unchanged component resources
-keep their existing snapshot versions, so the client fetches only the stale
-component, reuses unchanged opened Cherry readers, and drops the removed
-partition from the active view.
+The n+1 update changes Alice's LLM user-key partition and removes the
+`profile-dev-tools` profile from its MCP profile partition. Unchanged component
+resources keep their existing snapshot versions, so the client fetches only
+stale components and reuses unchanged opened Cherry readers.

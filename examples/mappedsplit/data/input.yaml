@@ -1,0 +1,63 @@
+providers:
+  - id: openai
+    kind: openai
+    endpoint: https://api.openai.com
+    secret_ref: env://OPENAI_PLATFORM
+    auth_type: bearer
+
+models:
+  - id: gpt-4o-mini
+    provider: openai
+    name: gpt-4o-mini
+    mode: chat
+  - id: gpt-4o-not-mini
+    provider: openai
+    name: gpt-4o-not-mini
+    mode: chat
+
+mcp_servers:
+  - id: github
+    endpoint: https://mcp.github.example
+    secret_ref: env://GITHUB_TOKEN
+    auth_type: bearer
+
+scopes:
+  - id: prod
+    principals:
+      - slug: slug:alice
+        model_routes:
+          gpt-4o-mini:
+            kind: target
+            provider: openai
+            model: gpt-4o-mini
+            secret_ref: orange://alice/openai
+        rate:
+          usd_per_day_cents: 10
+          rpm: 6
+          on_exceed: reject
+      - slug: slug:bob
+        model_routes:
+          gpt-4o-mini:
+            kind: target
+            provider: openai
+            model: gpt-4o-mini
+            secret_ref: orange://bob/openai
+        rate:
+          usd_per_day_cents: 1000
+          rpm: 3
+          on_exceed: reject
+    mcp_profiles:
+      - path: s/github
+        tools:
+          - exposed_name: github__list_repos
+            server: github
+            tool: list_repos
+            secret_ref: env://GITHUB_PLATFORM
+            auth_type: bearer
+      - path: profile-dev-tools
+        tools:
+          - exposed_name: github__list_repos
+            server: github
+            tool: list_repos
+            secret_ref: orange://alice/github
+            auth_type: bearer

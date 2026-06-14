@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -29,6 +28,8 @@ func runServer(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:8090", "listen address")
 	lane := fs.String("lane", defaultLane, "development lane identity")
 	partitions := fs.Int("partitions", 4, "mapped split partition count")
+	inputDir := fs.String("input-dir", filepath.Join("examples", "mappedsplit", "data"), "directory of watched .yaml mapped-split input files")
+	watchInterval := fs.Duration("watch-interval", 500*time.Millisecond, "interval for polling --input-dir changes")
 	local := fs.Bool("local", false, "use embedded Postgres, PgStore, and PgQue with data under .mappedsplit")
 	localDir := fs.String("local-dir", ".mappedsplit", "embedded Postgres root used with --local")
 	postgresDSN := fs.String("postgres-dsn", "", "existing Postgres DSN for PgStore and PgQue; use this for additional replicas")
@@ -44,7 +45,7 @@ func runServer(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	source := newExampleBuildSource(*lane, *partitions)
+	source := newYAMLBuildSource(*lane, *partitions, *inputDir)
 	var store config.Store = config.NewMemoryStore()
 	var scheduler *config.PgQueScheduler
 	var localRuntime *localPostgresRuntime
@@ -107,10 +108,24 @@ func runServer(args []string) error {
 			return err
 		}
 	} else {
-		if err := publishInitial(context.Background(), snapshotServer, *lane, *partitions); err != nil {
+		if err := publishCurrent(context.Background(), snapshotServer, source, "server-start"); err != nil {
 			return fmt.Errorf("publish initial mapped split: %w", err)
 		}
 	}
+
+	watchErr := make(chan error, 1)
+	go func() {
+		err := watchYAMLInput(ctx, logger, source, *watchInterval, func(ctx context.Context) error {
+			if scheduler != nil {
+				return scheduleExampleBuild(ctx, scheduler, source.CurrentBuildRequest("yaml-watch"))
+			}
+			return publishCurrent(ctx, snapshotServer, source, "yaml-watch")
+		})
+		if errors.Is(err, context.Canceled) {
+			err = nil
+		}
+		watchErr <- err
+	}()
 
 	mux := http.NewServeMux()
 	path := snapshotServer.Mount(mux)
@@ -119,11 +134,14 @@ func runServer(args []string) error {
 	})
 	mux.HandleFunc("POST /debug/nplus1", func(w http.ResponseWriter, _ *http.Request) {
 		var err error
+		if err = source.WriteNPlusOne(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if scheduler != nil {
-			source.SetNPlusOne()
 			err = scheduleExampleBuild(context.Background(), scheduler, source.CurrentBuildRequest("debug-nplus1"))
 		} else {
-			err = publishNPlusOne(context.Background(), snapshotServer, *lane, *partitions)
+			err = publishCurrent(context.Background(), snapshotServer, source, "debug-nplus1")
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -153,6 +171,10 @@ func runServer(args []string) error {
 	case err := <-workerErr:
 		if err != nil {
 			return fmt.Errorf("pgque worker: %w", err)
+		}
+	case err := <-watchErr:
+		if err != nil {
+			return fmt.Errorf("yaml input watcher: %w", err)
 		}
 	case <-ctx.Done():
 		logger.Info("shutting down")
@@ -276,10 +298,8 @@ func (laneResolver) ResolveLane(_ context.Context, principal config.ServerPrinci
 	return principal.ID, nil
 }
 
-func publishInitial(ctx context.Context, s *config.Server, lane string, partitions int) error {
-	input := exampleInput("orange://alice/openai")
-	generationID := "gen-demo"
-	req, err := buildMappedSplit(lane, input, partitions, generationID, 1, "")
+func publishCurrent(ctx context.Context, s *config.Server, source *yamlBuildSource, requestedBy string) error {
+	req, err := source.Build(ctx, source.CurrentBuildRequest(requestedBy))
 	if err != nil {
 		return err
 	}
@@ -287,72 +307,7 @@ func publishInitial(ctx context.Context, s *config.Server, lane string, partitio
 	return err
 }
 
-func publishNPlusOne(ctx context.Context, s *config.Server, lane string, partitions int) error {
-	input := exampleInput("orange://alice/openai-updated")
-	generationID := "gen-demo"
-	// Simulate one removed profile partition: profile-dev-tools no longer appears
-	// in the map, so clients must not keep serving the old reader.
-	req, err := buildMappedSplit(lane, input, partitions, generationID, 2, "profile-dev-tools")
-	if err != nil {
-		return err
-	}
-	_, err = s.PublishMappedSplit(ctx, req)
-	return err
-}
-
-type exampleBuildSource struct {
-	mu         sync.Mutex
-	lane       string
-	partitions int
-	secret     string
-	revision   int
-	omitPath   string
-}
-
-func newExampleBuildSource(lane string, partitions int) *exampleBuildSource {
-	return &exampleBuildSource{
-		lane:       lane,
-		partitions: partitions,
-		secret:     "orange://alice/openai",
-		revision:   1,
-	}
-}
-
-func (s *exampleBuildSource) SetNPlusOne() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.secret = "orange://alice/openai-updated"
-	s.revision = 2
-	s.omitPath = "profile-dev-tools"
-}
-
-func (s *exampleBuildSource) CurrentBuildRequest(requestedBy string) config.BuildRequest {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return config.BuildRequest{
-		Lane:           s.lane,
-		RequestedBy:    requestedBy,
-		SourceRevision: fmt.Sprintf("gen-demo-r%d", s.revision),
-		ChangeHint:     "example mapped-split rebuild",
-	}
-}
-
-func (s *exampleBuildSource) Build(_ context.Context, req config.BuildRequest) (config.MappedSplitRequest, error) {
-	s.mu.Lock()
-	lane := req.Lane
-	if lane == "" {
-		lane = s.lane
-	}
-	partitions := s.partitions
-	secret := s.secret
-	revision := s.revision
-	omitPath := s.omitPath
-	s.mu.Unlock()
-
-	return buildMappedSplit(lane, exampleInput(secret), partitions, "gen-demo", revision, omitPath)
-}
-
-func buildMappedSplit(lane string, input config.Input, partitions int, generationID string, revision int, omitMCPProfilePath string) (config.MappedSplitRequest, error) {
+func buildMappedSplit(lane string, input config.Input, partitions int, generationID string, revision int) (config.MappedSplitRequest, error) {
 	spec := config.MappedSplitSpec{
 		LLMUserKeyPartitions:     partitions,
 		MCPUserProfilePartitions: partitions,
@@ -375,21 +330,11 @@ func buildMappedSplit(lane string, input config.Input, partitions int, generatio
 		config.ComponentInput{Key: mcpServers, Input: mcpServersInput(input)},
 	)
 
-	omitMCPPartition := -1
-	if omitMCPProfilePath != "" {
-		removed, err := spec.MCPUserProfileBundle(omitMCPProfilePath)
-		if err != nil {
-			return config.MappedSplitRequest{}, err
-		}
-		omitMCPPartition = removed.Partition
-	}
 	for partition := range partitions {
 		key := config.MappedSplitBundleKey{Lane: config.MappedSplitLaneLLMUserKey, Partition: partition}
 		components = append(components, config.ComponentInput{Key: key, Input: llmPartitionInput(input, partitions, partition)})
-		if partition != omitMCPPartition {
-			key = config.MappedSplitBundleKey{Lane: config.MappedSplitLaneMCPUserProfile, Partition: partition}
-			components = append(components, config.ComponentInput{Key: key, Input: mcpProfilePartitionInput(input, partitions, partition)})
-		}
+		key = config.MappedSplitBundleKey{Lane: config.MappedSplitLaneMCPUserProfile, Partition: partition}
+		components = append(components, config.ComponentInput{Key: key, Input: mcpProfilePartitionInput(input, partitions, partition)})
 	}
 	return config.MappedSplitRequest{
 		Selection:               config.Selection{ScopeKind: defaultScopeKind, ScopeID: defaultScopeID},
@@ -402,69 +347,6 @@ func buildMappedSplit(lane string, input config.Input, partitions int, generatio
 		Spec:                    spec,
 		Components:              components,
 	}, nil
-}
-
-func exampleInput(aliceSecret string) config.Input {
-	return config.Input{
-		Providers: []config.Provider{{
-			ID:        "openai",
-			Kind:      "openai",
-			Endpoint:  "https://api.openai.com",
-			SecretRef: "env://OPENAI_PLATFORM",
-			AuthType:  "bearer",
-		}},
-		Models: []config.Model{{ID: "gpt-4o-mini", Provider: "openai", Name: "gpt-4o-mini", Mode: "chat"}},
-		MCPServers: []config.MCPServer{{
-			ID:        "github",
-			Endpoint:  "https://mcp.github.example",
-			SecretRef: "env://GITHUB_PLATFORM",
-			AuthType:  "bearer",
-		}},
-		Scopes: []config.Scope{{
-			ID: defaultScope,
-			Principals: []config.Principal{
-				principal("slug:alice", aliceSecret, 60),
-				principal("slug:bob", "orange://bob/openai", 30),
-			},
-			MCPProfiles: []config.MCPProfile{
-				{
-					Path: "s/github",
-					Tools: []config.MCPToolBinding{{
-						ExposedName: "github__list_repos",
-						Server:      "github",
-						Tool:        "list_repos",
-						SecretRef:   "env://GITHUB_PLATFORM",
-						AuthType:    "bearer",
-					}},
-				},
-				{
-					Path: "profile-dev-tools",
-					Tools: []config.MCPToolBinding{{
-						ExposedName: "github__list_repos",
-						Server:      "github",
-						Tool:        "list_repos",
-						SecretRef:   "orange://alice/github",
-						AuthType:    "bearer",
-					}},
-				},
-			},
-		}},
-	}
-}
-
-func principal(slug string, secret string, rpm uint32) config.Principal {
-	return config.Principal{
-		Slug: slug,
-		ModelRoutes: map[string]config.RoutePlan{
-			"gpt-4o-mini": {
-				Kind:      config.RouteKindTarget,
-				Provider:  "openai",
-				Model:     "gpt-4o-mini",
-				SecretRef: secret,
-			},
-		},
-		Rate: config.RatePolicy{USDPerDayCents: 1000, RPM: rpm, OnExceed: "reject"},
-	}
 }
 
 func llmGenericInput(input config.Input) config.Input {
