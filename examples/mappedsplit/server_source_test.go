@@ -15,9 +15,11 @@ func TestLoadYAMLInputDirLoadsDefaultExample(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, digest)
 	require.Len(t, input.Providers, 1)
-	require.Len(t, input.Models, 1)
+	require.Len(t, input.Models, 2)
 	require.Len(t, input.MCPServers, 1)
 	require.Len(t, input.Scopes, 1)
+	assert.Equal(t, "gpt-4o-mini", input.Models[0].ID)
+	assert.Equal(t, "gpt-4o-not-mini", input.Models[1].ID)
 
 	scope := input.Scopes[0]
 	require.Len(t, scope.Principals, 2)
