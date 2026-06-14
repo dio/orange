@@ -179,8 +179,8 @@ func ReceiveOne(ctx context.Context, pool *pgxpool.Pool, queue, consumer string)
 	if _, err := pool.Exec(ctx, "SELECT pgque.force_next_tick($1)", queue); err != nil {
 		return 0, "", fmt.Errorf("pgque setup: force tick: %w", err)
 	}
-	if _, err := pool.Exec(ctx, "SELECT pgque.ticker()"); err != nil {
-		return 0, "", fmt.Errorf("pgque setup: global tick: %w", err)
+	if _, err := pool.Exec(ctx, "SELECT pgque.ticker($1)", queue); err != nil {
+		return 0, "", fmt.Errorf("pgque setup: tick queue %q: %w", queue, err)
 	}
 	rows, err := pool.Query(ctx, "SELECT msg_id, type FROM pgque.receive($1, $2, 1)", queue, consumer)
 	if err != nil {

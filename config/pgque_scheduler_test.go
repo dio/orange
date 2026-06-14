@@ -94,6 +94,28 @@ func TestPgQueSchedulerScheduleBuildMarksDirtyAndSendsEvent(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
+func TestPgQueSchedulerTicksOnlyMappedSplitQueue(t *testing.T) {
+	ctx := context.Background()
+	pool, store := freshPgQueSchedulerStore(t, "holder-a")
+	scheduler := newTestPgQueScheduler(t, store, func(_ context.Context, req BuildRequest) (MappedSplitRequest, error) {
+		return testMappedSplitRequest(req.Lane, 1), nil
+	})
+
+	_, err := pool.Exec(ctx, "SELECT pgque.create_queue($1)", "unrelated_broken_queue")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, "UPDATE pgque.queue SET queue_event_seq = 'pgque.missing_sequence' WHERE queue_name = $1", "unrelated_broken_queue")
+	require.NoError(t, err)
+
+	require.NoError(t, scheduler.ScheduleBuild(ctx, BuildRequest{Lane: "lane-a", RequestedBy: "test"}))
+	processed, err := scheduler.ProcessOnce(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.Equal(t, uint64(1), pgQueSchedulerCurrentRevision(t, store, "lane-a"))
+
+	_, err = pool.Exec(ctx, "SELECT pgque.ticker()")
+	require.Error(t, err)
+}
+
 func TestPgQueSchedulerDuplicateEventsProduceOnePublishedRevision(t *testing.T) {
 	ctx := context.Background()
 	_, store := freshPgQueSchedulerStore(t, "holder-a")

@@ -211,27 +211,113 @@ owned by another transaction path.
 
 Async rebuild scheduling is layered on top of durable Postgres store
 publication and must be correct with multiple Orange server replicas. The store
-owns last-known-good maps, immutable component resources, build coalescing
-state, and the per-lane build lease used by both cold-start fetch and background
-workers. Queue systems such as PgQue should only signal that a build may be
-needed; they must not own current pointers, map revisions, component resources,
-or dirty flags.
+owns correctness; schedulers only signal that work may be needed.
 
-The implemented durable path is:
+**Correctness boundary.** The store owns:
+
+- last known good typed map per lane
+- immutable component bundle snapshots and map revisions
+- build request and coalescing state
+- per-lane build lease (used by both cold-start fetch and background workers)
+
+Queue systems (PgQue, cron, webhooks) must not own current pointers, map
+revisions, component resources, or dirty flags. No correctness decision may
+depend on process-local memory; in-memory caches are allowed only as optional
+read-through optimizations with short TTLs or explicit invalidation.
+
+**`BuildCoordinator` interface.** A separate optional interface extends the
+existing `Store` so in-memory examples stay small:
+
+```go
+type BuildCoordinator interface {
+    MarkMappedSplitDirty(ctx context.Context, req BuildRequest) error
+    GetMappedSplitBuildRequest(ctx context.Context, lane string) (*BuildRequest, error)
+    ClearMappedSplitDirty(ctx context.Context, lease BuildLease, mapVersion uint64) error
+    WithMappedSplitBuildLease(ctx context.Context, lane string, fn func(context.Context, BuildLease) error) error
+}
+```
+
+`MarkMappedSplitDirty` must be idempotent across replicas. Multiple replicas
+may mark the same lane dirty concurrently; the result is one dirty row with
+last-writer attribution. `BuildRequest` carries lane plus embedder-owned
+diagnostic metadata such as source revision and change hint; Orange must not
+interpret tenancy, ownership, policy precedence, or source database schema from
+that metadata.
+
+**Fetch path.** On a cold-start miss (on-demand build enabled), the caller
+acquires the store lease, re-reads the current map inside the lease, and builds
+if still missing. Once a good map exists, fetch keeps serving stale-good state
+until a worker successfully publishes a new map. Every replica executes this
+path identically against Postgres.
+
+**Worker path.** Workers run under the same store lease, giving single-writer
+behavior per lane regardless of duplicate queue delivery, multiple worker
+processes, or crash-then-redeliver scenarios. Different lanes build
+concurrently. The store contract must be correct with N replicas and N worker
+loops from day one.
+
+**Lease implementation.** Short critical sections may use `pg_advisory_xact_lock`.
+For production multi-replica targets, a lease table (`lane`, `holder_id`,
+`lease_version`, `locked_until`, `heartbeat_at`, `generation_started_at`)
+provides observability and crash recovery without holding a database transaction
+during expensive build steps. `lease_version` is the fencing token; publish and
+dirty-clear operations assert the current `(lane, holder_id, lease_version)` so
+an expired holder cannot publish after a new replica acquired the lease.
+
+**Publish transaction.** `PublishMappedSplit` atomically publishes a new
+current map:
+
+```text
+assert build lease fencing token
+allocate next resource versions for changed resources
+insert immutable resource payload rows
+allocate next map version
+insert immutable map payload row
+update current pointer to map version
+```
+
+The current pointer is never updated before all referenced component resources
+are readable. If any write fails, the previous current pointer remains valid.
+Scheduled build paths clear dirty state after publishing while asserting the
+same lease fencing token and the published map version; stale or expired holders
+must not clear dirty state for another builder's publication.
+
+Old map and resource rows are not deleted by publish. Retention and garbage
+collection are separate operational concerns. Retry paths should be safe after
+ambiguous failures: either the store detects that equivalent checksums already
+exist, or it publishes a new valid revision without corrupting current state.
+
+**Store tables.** Five logical tables under the Orange migration namespace:
+`orange_mapped_split_current`, `orange_mapped_split_maps`,
+`orange_mapped_split_resources`, `orange_mapped_split_build_requests`,
+`orange_mapped_split_build_leases`. Payloads are inline `bytea`. Versions are
+monotonic per lane (maps) or per `(lane, resource)` (resources) and are
+store-allocated, never process-local.
+
+**Migration split.** Store migrations (`config/postgres/migration`) and PgQue
+schema setup (`config/pgque`) are independently runnable DDL tracks. The store
+package must be usable without PgQue installed. Do not mix PgQue SQL into the
+Orange store migration namespace. Queue creation and subscription happen after
+both schemas exist and are idempotent at multi-replica startup.
+
+**Implemented durable path:**
 
 - `config/postgres/migration.Migrate` applies explicit, idempotent store
-  migrations.
-- `config.NewPgStore` constructs a `pgxpool`-backed `Store` and
-  `BuildCoordinator`.
-- `config.ServerOptions.Store` injects that store into embedders' own mounted
-  `SnapshotService` handlers.
-- `config/pgque.Setup` installs the optional PgQue signal layer separately from
-  store migrations.
+  migrations (embedded SQL in `config/postgres/migration/sql/postgres/`).
+- `config.NewPgStore` constructs a `pgxpool`-backed `Store` + `BuildCoordinator`.
+  Construction does not run DDL; callers apply migrations first.
+- `config/pgque.Setup` installs the optional PgQue signal layer separately.
 - `config.NewPgQueScheduler` marks lanes dirty, sends PgQue events, and runs
-  worker builds under the same store lease used by cold-start fetches.
+  worker builds under the same store lease used by cold-start fetches. PgQue
+  payloads carry lane and diagnostic metadata only, never source records or
+  secrets. Workers tick only their configured queue, not the global PgQue
+  scheduler, so unrelated queues in a shared database cannot affect
+  mapped-split builds. Events are acked only after a successful store operation
+  or proven no-op; transient failures are nacked for retry.
 
-See `docs/design/mapped-split-store-scheduler.md` for the store-first design,
-migration split, worker lease contract, and PgQue integration shape.
+**Integration tests** use `internal/embeddedpg/testpg.Pool(t)` with a random
+free port per test binary. Store-only tests run without any PgQue schema
+installed; PgQue tests run without any Orange store tables installed.
 
 Lower-level packages remain available:
 

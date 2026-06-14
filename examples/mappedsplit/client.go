@@ -5,17 +5,25 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/chzyer/readline"
+	"github.com/dio/cherry"
+	cherryrepl "github.com/dio/cherry/repl"
 	"github.com/dio/orange/config"
+	"github.com/dio/orange/mappedsplit"
 )
 
 func runClient(args []string) error {
@@ -27,11 +35,13 @@ func runClient(args []string) error {
 			return runClientFetchBundle(args[1:])
 		case "apply", "watch":
 			return runClientApply(args[1:])
+		case "repl":
+			return runClientREPL(args[1:])
 		default:
 			return fmt.Errorf("unknown client command %q", args[0])
 		}
 	}
-	return runClientApply(args)
+	return runClientREPL(args)
 }
 
 func runClientFetchMap(args []string) error {
@@ -188,6 +198,133 @@ func runClientApply(args []string) error {
 	}
 }
 
+func runClientREPL(args []string) error {
+	fs := flag.NewFlagSet("client repl", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	serverURL := fs.String("server", defaultServerURL, "Orange server base URL")
+	lane := fs.String("lane", defaultLane, "authorized development lane identity")
+	interval := fs.Duration("interval", 2*time.Second, "background sync interval")
+	scope := fs.String("scope", defaultScope, "initial Cherry enforcement scope")
+	triggerUpdate := fs.Bool("trigger-update", false, "POST /debug/nplus1 after the first successful load")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	c, err := newLaneClient(*serverURL, *lane)
+	if err != nil {
+		return err
+	}
+	initial, err := c.Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("initial sync: %w", err)
+	}
+	state, err := newMappedSplitREPLState(*lane, *scope, initial, func(ctx context.Context) (*config.SyncResult, error) {
+		return c.Sync(ctx)
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("loaded mapped split lane=%s map_version=%d checksum=%s generation=%s revision=%d fetched=%d reused=%d omitted=%d\n",
+		*lane,
+		initial.Map.Version,
+		shortChecksum(initial.Map.Checksum),
+		initial.Opened.Map.GenerationID,
+		initial.Opened.Map.MapRevision,
+		initial.Stats.Fetched,
+		initial.Stats.Reused,
+		initial.Stats.Omitted,
+	)
+	fmt.Println("commands: summary, scopes, use <scope>, llm ..., mcp ..., inspect ..., reload, sync, help, quit")
+
+	if *triggerUpdate {
+		if err := triggerNPlusOne(ctx, *serverURL); err != nil {
+			logger.Error("trigger n+1 failed", "error", err)
+		} else {
+			logger.Info("triggered n+1 update")
+		}
+	}
+
+	go pollMappedSplitChanges(ctx, logger, c, state, *interval)
+
+	rl, err := readline.NewEx(&readline.Config{Prompt: "orange> "})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = rl.Close()
+	}()
+	for {
+		line, err := rl.Readline()
+		if errors.Is(err, io.EOF) || errors.Is(err, readline.ErrInterrupt) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		result, err := state.Execute(ctx, line)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			continue
+		}
+		if result.Text != "" {
+			fmt.Print(result.Text)
+			if !strings.HasSuffix(result.Text, "\n") {
+				fmt.Println()
+			}
+		}
+		if !result.Continue {
+			return nil
+		}
+	}
+}
+
+func pollMappedSplitChanges(ctx context.Context, logger *slog.Logger, c *config.Client, state *mappedSplitREPLState, interval time.Duration) {
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		result, err := c.Sync(ctx)
+		if err != nil {
+			logger.Error("background sync failed", "error", err)
+			continue
+		}
+		if result.Unchanged {
+			continue
+		}
+		if err := state.Replace(result); err != nil {
+			logger.Error("refresh repl view failed", "error", err)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "\nnotification: mapped split changed lane=%s map_version=%d checksum=%s generation=%s revision=%d fetched=%d reused=%d omitted=%d\n",
+			state.Lane(),
+			result.Map.Version,
+			shortChecksum(result.Map.Checksum),
+			result.Opened.Map.GenerationID,
+			result.Opened.Map.MapRevision,
+			result.Stats.Fetched,
+			result.Stats.Reused,
+			result.Stats.Omitted,
+		)
+	}
+}
+
 func newLaneClient(serverURL string, lane string) (*config.Client, error) {
 	return config.NewClient(config.ClientOptions{
 		BaseURL: serverURL,
@@ -269,4 +406,344 @@ func triggerNPlusOne(ctx context.Context, serverURL string) error {
 		return fmt.Errorf("unexpected status %s", resp.Status)
 	}
 	return nil
+}
+
+type mappedSplitREPLState struct {
+	mu     sync.Mutex
+	lane   string
+	sync   func(context.Context) (*config.SyncResult, error)
+	latest *config.SyncResult
+	repl   *cherryrepl.Session
+}
+
+func newMappedSplitREPLState(
+	lane string,
+	defaultScope string,
+	result *config.SyncResult,
+	syncFn func(context.Context) (*config.SyncResult, error),
+) (*mappedSplitREPLState, error) {
+	if result == nil || result.Opened == nil || result.Map == nil {
+		return nil, fmt.Errorf("mapped split repl requires an opened view")
+	}
+	state := &mappedSplitREPLState{lane: lane, sync: syncFn}
+	if err := state.set(result, defaultScope); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (s *mappedSplitREPLState) Lane() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lane
+}
+
+func (s *mappedSplitREPLState) Execute(ctx context.Context, line string) (cherryrepl.Result, error) {
+	switch strings.TrimSpace(line) {
+	case "sync", "reload":
+		return s.syncCommand(ctx)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.repl == nil {
+		return cherryrepl.Result{}, fmt.Errorf("repl session is not initialized")
+	}
+	return s.repl.Execute(ctx, line)
+}
+
+func (s *mappedSplitREPLState) Replace(result *config.SyncResult) error {
+	s.mu.Lock()
+	scope := ""
+	if s.repl != nil {
+		scope = s.repl.ActiveScope()
+	}
+	s.mu.Unlock()
+	return s.set(result, scope)
+}
+
+func (s *mappedSplitREPLState) syncCommand(ctx context.Context) (cherryrepl.Result, error) {
+	if s.sync == nil {
+		return cherryrepl.Result{Continue: true, Text: "sync is not configured\n"}, nil
+	}
+	result, err := s.sync(ctx)
+	if err != nil {
+		return cherryrepl.Result{}, err
+	}
+	if err := s.Replace(result); err != nil {
+		return cherryrepl.Result{}, err
+	}
+	text := fmt.Sprintf("synced map_version=%d checksum=%s unchanged=%v fetched=%d reused=%d omitted=%d\n",
+		result.Map.Version,
+		shortChecksum(result.Map.Checksum),
+		result.Unchanged,
+		result.Stats.Fetched,
+		result.Stats.Reused,
+		result.Stats.Omitted,
+	)
+	return cherryrepl.Result{Continue: true, Text: text, Lane: s.lane}, nil
+}
+
+func (s *mappedSplitREPLState) set(result *config.SyncResult, defaultScope string) error {
+	if result == nil || result.Opened == nil || result.Map == nil {
+		return fmt.Errorf("mapped split repl requires an opened view")
+	}
+	if defaultScope == "" {
+		defaultScope = defaultScopeFor(result.Opened.Map.Scopes)
+	}
+	backend := mappedSplitREPLBackend{opened: result.Opened}
+	session, err := cherryrepl.NewSession(cherryrepl.Config{
+		Backend:      backend,
+		DefaultScope: defaultScope,
+		Context: cherryrepl.Context{
+			Lane:             s.lane,
+			SnapshotVersion:  result.Map.Version,
+			SnapshotChecksum: shortChecksum(result.Map.Checksum),
+			Source:           "orange mappedsplit client",
+		},
+		Reload: func(ctx context.Context) (cherryrepl.Backend, cherryrepl.Context, error) {
+			if s.sync == nil {
+				return nil, cherryrepl.Context{}, fmt.Errorf("sync is not configured")
+			}
+			refreshed, err := s.sync(ctx)
+			if err != nil {
+				return nil, cherryrepl.Context{}, err
+			}
+			if err := s.Replace(refreshed); err != nil {
+				return nil, cherryrepl.Context{}, err
+			}
+			return mappedSplitREPLBackend{opened: refreshed.Opened}, cherryrepl.Context{
+				Lane:             s.lane,
+				SnapshotVersion:  refreshed.Map.Version,
+				SnapshotChecksum: shortChecksum(refreshed.Map.Checksum),
+				Source:           "orange mappedsplit client",
+			}, nil
+		},
+	})
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.latest = result
+	s.repl = session
+	s.mu.Unlock()
+	return nil
+}
+
+type mappedSplitREPLBackend struct {
+	opened *config.Opened
+}
+
+func (b mappedSplitREPLBackend) Metadata(context.Context) (cherry.BundleMetadata, error) {
+	if b.opened == nil {
+		return cherry.BundleMetadata{}, fmt.Errorf("no opened mapped split view")
+	}
+	return b.opened.LLMGeneric.Opened.Metadata, nil
+}
+
+func (b mappedSplitREPLBackend) Scopes(context.Context) ([]string, error) {
+	if b.opened == nil {
+		return nil, fmt.Errorf("no opened mapped split view")
+	}
+	return append([]string(nil), b.opened.Map.Scopes...), nil
+}
+
+func (b mappedSplitREPLBackend) LLMPrincipals(ctx context.Context, scope string) ([]cherry.PrincipalInfo, error) {
+	routes, err := b.PrincipalRoutes(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	bySlug := map[string]map[string]struct{}{}
+	for _, route := range routes {
+		models := bySlug[route.PrincipalSlug]
+		if models == nil {
+			models = map[string]struct{}{}
+			bySlug[route.PrincipalSlug] = models
+		}
+		models[route.RequestedModel] = struct{}{}
+	}
+	out := make([]cherry.PrincipalInfo, 0, len(bySlug))
+	for slug, modelSet := range bySlug {
+		models := make([]string, 0, len(modelSet))
+		for model := range modelSet {
+			models = append(models, model)
+		}
+		sort.Strings(models)
+		out = append(out, cherry.PrincipalInfo{ScopeID: scope, PrincipalSlug: slug, RequestedModels: models})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].PrincipalSlug < out[j].PrincipalSlug
+	})
+	return out, nil
+}
+
+func (b mappedSplitREPLBackend) ResolveLLMPlan(_ context.Context, scope string, principalSlug string, modelID string) (cherry.LLMPlan, bool, error) {
+	if b.opened == nil {
+		return cherry.LLMPlan{}, false, fmt.Errorf("no opened mapped split view")
+	}
+	if key, err := b.opened.Spec.LLMUserKeyBundle(principalSlug); err == nil && key.Partition >= 0 && key.Partition < len(b.opened.LLMUserKey) {
+		component := b.opened.LLMUserKey[key.Partition]
+		if component.Ref.Resource != "" {
+			if plan, ok := component.Opened.Reader.ResolveLLMPlan(scope, principalSlug, modelID); ok {
+				return plan, true, nil
+			}
+		}
+	}
+	genericSlug := principalSlug
+	if b.opened.Map.LLMDefaultPrincipalSlug != "" {
+		genericSlug = b.opened.Map.LLMDefaultPrincipalSlug
+	}
+	plan, ok := b.opened.LLMGeneric.Opened.Reader.ResolveLLMPlan(scope, genericSlug, modelID)
+	if ok {
+		plan.PrincipalSlug = principalSlug
+	}
+	return plan, ok, nil
+}
+
+func (b mappedSplitREPLBackend) Providers(context.Context) ([]cherry.ProviderInfo, error) {
+	return b.opened.LLMGeneric.Opened.Reader.Providers(), nil
+}
+
+func (b mappedSplitREPLBackend) Models(context.Context) ([]cherry.ModelInfo, error) {
+	return b.opened.LLMGeneric.Opened.Reader.Models(), nil
+}
+
+func (b mappedSplitREPLBackend) ResolveModel(_ context.Context, modelID string) (cherry.ModelInfo, bool, error) {
+	model, ok := b.opened.LLMGeneric.Opened.Reader.ResolveModel(modelID)
+	return model, ok, nil
+}
+
+func (b mappedSplitREPLBackend) ModelCapability(_ context.Context, modelID string, capability string) (bool, error) {
+	return b.opened.LLMGeneric.Opened.Reader.ModelCapability(modelID, capability), nil
+}
+
+func (b mappedSplitREPLBackend) V1ModelsJSON(_ context.Context, providerID string) ([]byte, error) {
+	if providerID == "" {
+		return b.opened.LLMGeneric.Opened.Reader.V1ModelsJSON()
+	}
+	return b.opened.LLMGeneric.Opened.Reader.V1ModelsJSONForProvider(providerID)
+}
+
+func (b mappedSplitREPLBackend) MCPPaths(_ context.Context, scope string) ([]cherry.MCPPath, error) {
+	paths := map[string]cherry.MCPPath{}
+	for _, component := range append([]mappedsplit.OpenedComponent{b.opened.MCPServers}, b.opened.MCPUserProfile...) {
+		if component.Ref.Resource == "" {
+			continue
+		}
+		got, ok := component.Opened.Reader.MCPPaths(scope)
+		if !ok {
+			continue
+		}
+		for _, path := range got {
+			paths[path.Path] = path
+		}
+	}
+	out := make([]cherry.MCPPath, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, path)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Path < out[j].Path
+	})
+	return out, nil
+}
+
+func (b mappedSplitREPLBackend) ResolveMCP(_ context.Context, scope string, path string) (cherry.MCPResult, bool, error) {
+	component := b.mcpComponent(path)
+	if component.Ref.Resource == "" {
+		return cherry.MCPResult{}, false, nil
+	}
+	result, ok := component.Opened.Reader.ResolveMCP(scope, path)
+	return result, ok, nil
+}
+
+func (b mappedSplitREPLBackend) ResolveMCPInitialize(_ context.Context, scope string, path string) (cherry.MCPInitializeResult, bool, error) {
+	component := b.mcpComponent(path)
+	if component.Ref.Resource == "" {
+		return cherry.MCPInitializeResult{}, false, nil
+	}
+	result, ok := component.Opened.Reader.ResolveMCPInitialize(scope, path)
+	return result, ok, nil
+}
+
+func (b mappedSplitREPLBackend) ResolveMCPTool(_ context.Context, scope string, path string, exposedTool string) (cherry.MCPTool, bool, error) {
+	component := b.mcpComponent(path)
+	if component.Ref.Resource == "" {
+		return cherry.MCPTool{}, false, nil
+	}
+	ids, ok := component.Opened.Reader.ResolveMCPToolIDs(scope, path, exposedTool)
+	if !ok {
+		return cherry.MCPTool{}, false, nil
+	}
+	reader := component.Opened.Reader
+	return cherry.MCPTool{
+		ExposedName:    reader.String(ids.ExposedNameSID),
+		Server:         reader.String(ids.ServerSID),
+		ServerEndpoint: reader.String(ids.ServerEndpointSID),
+		Tool:           reader.String(ids.ToolSID),
+		SecretRef:      reader.String(ids.SecretSID),
+		AuthType:       reader.String(ids.AuthTypeSID),
+	}, true, nil
+}
+
+func (b mappedSplitREPLBackend) PrincipalRoutes(_ context.Context, scope string) ([]cherry.PrincipalRoute, error) {
+	routes := map[string]cherry.PrincipalRoute{}
+	for _, component := range append([]mappedsplit.OpenedComponent{b.opened.LLMGeneric}, b.opened.LLMUserKey...) {
+		if component.Ref.Resource == "" {
+			continue
+		}
+		got, ok := component.Opened.Reader.PrincipalRoutes(scope)
+		if !ok {
+			continue
+		}
+		for _, route := range got {
+			key := route.PrincipalSlug + "\x00" + route.RequestedModel
+			routes[key] = route
+		}
+	}
+	out := make([]cherry.PrincipalRoute, 0, len(routes))
+	for _, route := range routes {
+		out = append(out, route)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PrincipalSlug == out[j].PrincipalSlug {
+			return out[i].RequestedModel < out[j].RequestedModel
+		}
+		return out[i].PrincipalSlug < out[j].PrincipalSlug
+	})
+	return out, nil
+}
+
+func (b mappedSplitREPLBackend) mcpComponent(path string) mappedsplit.OpenedComponent {
+	if b.opened == nil {
+		return mappedsplit.OpenedComponent{}
+	}
+	if strings.HasPrefix(path, "s/") {
+		return b.opened.MCPServers
+	}
+	if key, err := b.opened.Spec.MCPUserProfileBundle(path); err == nil && key.Partition >= 0 && key.Partition < len(b.opened.MCPUserProfile) {
+		return b.opened.MCPUserProfile[key.Partition]
+	}
+	return mappedsplit.OpenedComponent{}
+}
+
+func defaultScopeFor(scopes []string) string {
+	if len(scopes) == 1 {
+		return scopes[0]
+	}
+	for _, scope := range scopes {
+		if scope == defaultScope {
+			return scope
+		}
+	}
+	return ""
+}
+
+func shortChecksum(checksum []byte) string {
+	if len(checksum) == 0 {
+		return ""
+	}
+	if len(checksum) > 8 {
+		checksum = checksum[:8]
+	}
+	return hex.EncodeToString(checksum)
 }

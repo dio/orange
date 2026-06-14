@@ -15,10 +15,53 @@ Run the server in one terminal:
 go run ./examples/mappedsplit server --addr 127.0.0.1:8090 --partitions 4
 ```
 
+For a durable local run, add `--local`. The server starts embedded Postgres,
+stores data under `.mappedsplit`, applies Orange store migrations, installs
+PgQue, constructs `config.PgStore`, and schedules builds through
+`config.PgQueScheduler`:
+
+```sh
+go run ./examples/mappedsplit server --local --addr 127.0.0.1:8090 --partitions 4
+```
+
+Startup prints the Postgres root, DSN, and a ready-to-copy `psql` command:
+
+```text
+local postgres root: .mappedsplit
+local postgres dsn: postgres://orange:orange@127.0.0.1:5433/orange?sslmode=disable
+psql: psql "postgres://orange:orange@127.0.0.1:5433/orange?sslmode=disable"
+```
+
 Run the client in another:
 
 ```sh
 go run ./examples/mappedsplit client --server http://127.0.0.1:8090 --interval 2s
+```
+
+The default client mode is an interactive REPL over the active mapped-split
+view. It fetches the typed map, opens changed component bundles, and then lets
+you run Cherry diagnostic commands against the composed local view:
+
+```text
+orange> summary
+orange> llm prod slug:alice gpt-4o-mini
+orange> mcp list prod profile-dev-tools
+orange> inspect principals
+orange> sync
+orange> quit
+```
+
+The REPL keeps polling in the background. When the server publishes a newer map,
+the client prints a notification such as:
+
+```text
+notification: mapped split changed lane=lane-a map_version=2 checksum=... generation=gen-demo revision=2 fetched=1 reused=8 omitted=1
+```
+
+Use `client apply` for the older non-interactive polling output:
+
+```sh
+go run ./examples/mappedsplit client apply --server http://127.0.0.1:8090 --interval 2s
 ```
 
 Walk the timeline one step at a time:
@@ -65,8 +108,29 @@ The example owns the HTTP server, health route, and `/debug/nplus1` business
 route, but it still mounts Orange's reusable `config.Server`. That is the
 intended production shape: attach the SnapshotService to your control plane
 rather than forcing your control plane into an Orange-owned server process.
-Multi-replica deployments should inject a durable `config.Store` instead of the
-default in-memory store.
+
+Horizontal scaling story:
+
+- Without `--local` or `--postgres-dsn`, the example uses the default in-memory
+  store and is single-process only.
+- `--local` is for one development process that owns the embedded Postgres data
+  directory under `.mappedsplit`.
+- Additional local server processes can connect to the first process's printed
+  DSN with `--postgres-dsn` and a different listen address:
+
+  ```sh
+  go run ./examples/mappedsplit server \
+    --postgres-dsn 'postgres://orange:orange@127.0.0.1:5433/orange?sslmode=disable' \
+    --addr 127.0.0.1:8091 \
+    --worker-id replica-b
+  ```
+
+- In production-style multi-replica deployments, every server points at the
+  same external Postgres DSN with `--postgres-dsn`. Each process constructs its
+  own `PgStore` and PgQue worker, but current maps, component bundles, dirty
+  rows, and build leases live in Postgres. Duplicate schedules and duplicate
+  queue delivery are safe because PgQue is only a signal layer and PgStore owns
+  the per-lane lease and fencing token.
 
 The client always fetches the typed map first. Component resources are
 discovered from that SoTW map and are fetched only when missing or stale

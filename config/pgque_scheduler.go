@@ -188,8 +188,8 @@ func (s *PgQueScheduler) ProcessOnce(ctx context.Context) (int, error) {
 	if _, err := s.store.pool.Exec(ctx, "SELECT pgque.force_next_tick($1)", s.queue); err != nil {
 		return 0, fmt.Errorf("pgque scheduler: force tick queue %q: %w", s.queue, err)
 	}
-	if _, err := s.store.pool.Exec(ctx, "SELECT pgque.ticker()"); err != nil {
-		return 0, fmt.Errorf("pgque scheduler: tick queues: %w", err)
+	if _, err := s.store.pool.Exec(ctx, "SELECT pgque.ticker($1)", s.queue); err != nil {
+		return 0, fmt.Errorf("pgque scheduler: tick queue %q: %w", s.queue, err)
 	}
 	msgs, err := s.receive(ctx)
 	if err != nil {
