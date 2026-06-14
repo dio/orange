@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	configv1 "github.com/dio/orange/api/orange/config/v1"
+	"github.com/dio/orange/internal/otelx"
 	"github.com/dio/orange/producer"
 )
 
@@ -65,8 +68,12 @@ type Builder struct {
 	opts BuildOptions
 }
 
+var mappedSplitTracer = otelx.Tracer("mappedsplit")
+
 // NewBuilder creates a mapped-split Builder.
 func NewBuilder(opts BuildOptions) *Builder {
+	otelx.AutoConfigureFromEnv()
+
 	if opts.Clock == nil {
 		opts.Clock = time.Now
 	}
@@ -82,21 +89,57 @@ func NewBuilder(opts BuildOptions) *Builder {
 // components. It does not publish snapshots; callers publish each
 // ComponentOutput.Payload on the resources referenced by the map, then publish a
 // typed map snapshot with NewMapSnapshot.
-func (b *Builder) Build(_ context.Context, req BuildRequest) (BuildOutput, error) {
+func (b *Builder) Build(ctx context.Context, req BuildRequest) (BuildOutput, error) {
+	otelx.AutoConfigureFromEnv()
+	start := time.Now()
+	resultLabel := "success"
+	defer func() {
+		recordMappedSplitOperation(ctx, "mappedsplit.build", resultLabel, start)
+	}()
+
+	ctx, span := mappedSplitTracer.Start(ctx, "orange.mappedsplit.Builder.Build",
+		trace.WithAttributes(
+			attribute.String("orange.lane", req.Lane),
+			attribute.String("orange.scope_kind", req.Selection.ScopeKind),
+			attribute.Int("orange.component_count", len(req.Components)),
+			attribute.Int("orange.map_revision", req.MapRevision),
+		),
+	)
+	defer span.End()
+
+	if err := ctx.Err(); err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
+		return BuildOutput{}, err
+	}
 	if err := req.Spec.Validate(); err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, err
 	}
 	if req.Selection.ScopeKind == "" || req.Selection.ScopeID == "" {
-		return BuildOutput{}, fmt.Errorf("selection scope kind and scope ID are required")
+		resultLabel = "error"
+		err := fmt.Errorf("selection scope kind and scope ID are required")
+		otelx.RecordError(span, err)
+		return BuildOutput{}, err
 	}
 	if len(req.Scopes) == 0 {
-		return BuildOutput{}, fmt.Errorf("at least one concrete scope is required")
+		resultLabel = "error"
+		err := fmt.Errorf("at least one concrete scope is required")
+		otelx.RecordError(span, err)
+		return BuildOutput{}, err
 	}
 	if req.GenerationID == "" {
-		return BuildOutput{}, fmt.Errorf("generation ID is required")
+		resultLabel = "error"
+		err := fmt.Errorf("generation ID is required")
+		otelx.RecordError(span, err)
+		return BuildOutput{}, err
 	}
 	if req.MapRevision <= 0 {
-		return BuildOutput{}, fmt.Errorf("map revision must be positive")
+		resultLabel = "error"
+		err := fmt.Errorf("map revision must be positive")
+		otelx.RecordError(span, err)
+		return BuildOutput{}, err
 	}
 
 	splitMap := SplitMap{
@@ -129,13 +172,19 @@ func (b *Builder) Build(_ context.Context, req BuildRequest) (BuildOutput, error
 	for _, component := range req.Components {
 		name := component.Key.Component()
 		if _, ok := seen[name]; ok {
-			return BuildOutput{}, fmt.Errorf("duplicate mapped split component %q", name)
+			resultLabel = "error"
+			err := fmt.Errorf("duplicate mapped split component %q", name)
+			otelx.RecordError(span, err)
+			return BuildOutput{}, err
 		}
 		seen[name] = struct{}{}
 
 		out, err := b.buildComponent(req, component)
 		if err != nil {
-			return BuildOutput{}, fmt.Errorf("build %s: %w", name, err)
+			resultLabel = "error"
+			err := fmt.Errorf("build %s: %w", name, err)
+			otelx.RecordError(span, err)
+			return BuildOutput{}, err
 		}
 		components[name] = out
 		componentSeq = append(componentSeq, name)

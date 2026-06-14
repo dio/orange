@@ -186,6 +186,18 @@ mux.HandleFunc("/healthz", healthz)
 mux.HandleFunc("POST /internal/rebuild", rebuild)
 ```
 
+Orange instruments producer build, mapped-split build, publish,
+`SnapshotService` fetch, client sync/fetch, scheduler, cold-start, and store
+paths with OpenTelemetry spans and metrics. When standard OTel trace or metric
+exporter environment variables are present, Orange installs a process-global
+OTel SDK during normal facade construction so embedded use exports telemetry
+without extra wiring. `OTEL_SDK_DISABLED=true`, `OTEL_TRACES_EXPORTER=none`, or
+`OTEL_METRICS_EXPORTER=none` disables the corresponding automatic setup.
+Embedders that already own OTel setup may configure the global providers before
+constructing Orange components; embedders that rely on Orange's automatic SDK
+should call `config.ShutdownOpenTelemetry` during process shutdown to flush
+batched telemetry.
+
 `config.Store` is the multi-replica boundary:
 
 ```go

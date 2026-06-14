@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	configv1 "github.com/dio/orange/api/orange/config/v1"
+	"github.com/dio/orange/internal/otelx"
 )
 
 const (
@@ -22,6 +25,8 @@ const (
 	// ConfigPayloadSchemaVersion versions the ConfigPayload wrapper.
 	ConfigPayloadSchemaVersion = 1
 )
+
+var producerTracer = otelx.Tracer("producer")
 
 // Selection describes what the caller wants built. ScopeKind and ScopeID are
 // opaque labels owned by the embedding control plane.
@@ -61,6 +66,8 @@ type Builder struct {
 
 // NewBuilder creates a Builder with the given options.
 func NewBuilder(opts Options) *Builder {
+	otelx.AutoConfigureFromEnv()
+
 	if opts.Clock == nil {
 		opts.Clock = time.Now
 	}
@@ -72,15 +79,41 @@ func NewBuilder(opts Options) *Builder {
 // into SnapshotMetadata so readers can verify which lane they received.
 // The returned BuildOutput contains immutable copies of all byte slices.
 func (b *Builder) Build(ctx context.Context, sel Selection, lane string, result BuildResult) (BuildOutput, error) {
+	otelx.AutoConfigureFromEnv()
+	start := time.Now()
+	resultLabel := "success"
+	defer func() {
+		recordProducerOperation(ctx, "producer.build", resultLabel, start)
+	}()
+
+	ctx, span := producerTracer.Start(ctx, "orange.producer.Builder.Build",
+		trace.WithAttributes(
+			attribute.String("orange.lane", lane),
+			attribute.String("orange.scope_kind", sel.ScopeKind),
+			attribute.Int("orange.scope_count", len(result.Scopes)),
+		),
+	)
+	defer span.End()
+
 	if err := ctx.Err(); err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, err
 	}
 
 	blob, manifest, err := cherry.BuildWithManifest(result.Input)
 	if err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, fmt.Errorf("build cherry pack: %w", err)
 	}
+	span.SetAttributes(
+		attribute.Int64("orange.manifest_size_bytes", int64(manifest.SizeBytes)),
+		attribute.Int64("orange.manifest_checksum", int64(manifest.Checksum)),
+	)
 	if err := ctx.Err(); err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, err
 	}
 
@@ -88,9 +121,14 @@ func (b *Builder) Build(ctx context.Context, sel Selection, lane string, result 
 
 	compressed, err := cherry.EncodeBundleZstd(bundle)
 	if err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, fmt.Errorf("encode cherry bundle zstd: %w", err)
 	}
+	span.SetAttributes(attribute.Int("orange.payload_size_bytes", len(compressed)))
 	if err := ctx.Err(); err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return BuildOutput{}, err
 	}
 

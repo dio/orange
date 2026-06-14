@@ -8,6 +8,10 @@ import (
 	"math"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+
+	"github.com/dio/orange/internal/otelx"
 	"github.com/dio/orange/mappedsplit"
 )
 
@@ -39,6 +43,8 @@ type PgQueScheduler struct {
 // NewPgQueScheduler creates a scheduler using store for authoritative state.
 // Call config/pgque.Setup before using it.
 func NewPgQueScheduler(store *PgStore, build OnDemandBuildFunc, opts ...PgQueSchedulerOption) (*PgQueScheduler, error) {
+	otelx.AutoConfigureFromEnv()
+
 	if store == nil {
 		return nil, fmt.Errorf("pgque scheduler: postgres store is required")
 	}
@@ -131,7 +137,23 @@ func WithPgQueSchedulerResourceForComponent(fn func(string) string) PgQueSchedul
 // ScheduleBuild marks the lane dirty and enqueues one PgQue build signal in a
 // single Postgres transaction.
 func (s *PgQueScheduler) ScheduleBuild(ctx context.Context, req BuildRequest) error {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.PgQueScheduler.ScheduleBuild",
+		semconv.DBSystemNamePostgreSQL,
+		semconv.DBOperationName("pgque.schedule_build"),
+		attribute.String("orange.lane", req.Lane),
+		attribute.String("orange.pgque.queue", s.queue),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "scheduler.schedule_build", resultLabel, start)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if err := req.Validate(); err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return err
 	}
 	payload, err := json.Marshal(pgQueBuildPayload{
@@ -141,23 +163,36 @@ func (s *PgQueScheduler) ScheduleBuild(ctx context.Context, req BuildRequest) er
 		ChangeHint:     req.ChangeHint,
 	})
 	if err != nil {
-		return fmt.Errorf("pgque scheduler: marshal build payload: %w", err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: marshal build payload: %w", err)
+		captureSpanError(&spanErr, err)
+		return err
 	}
 
 	tx, err := s.store.beginTx(ctx)
 	if err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if err := markMappedSplitDirtyTx(ctx, tx, req); err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return err
 	}
 	if _, err := tx.Exec(ctx, "SELECT pgque.send($1, $2, $3::jsonb)", s.queue, PgQueMappedSplitBuildEventType, string(payload)); err != nil {
-		return fmt.Errorf("pgque scheduler: send build event lane %q: %w", req.Lane, err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: send build event lane %q: %w", req.Lane, err)
+		captureSpanError(&spanErr, err)
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("pgque scheduler: schedule build lane %q commit: %w", req.Lane, err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: schedule build lane %q commit: %w", req.Lane, err)
+		captureSpanError(&spanErr, err)
+		return err
 	}
 	return nil
 }
@@ -185,31 +220,61 @@ func (s *PgQueScheduler) Run(ctx context.Context) error {
 // ProcessOnce ticks the queue, receives one batch, and processes all returned
 // mapped-split build events.
 func (s *PgQueScheduler) ProcessOnce(ctx context.Context) (int, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.PgQueScheduler.ProcessOnce",
+		semconv.DBSystemNamePostgreSQL,
+		semconv.DBOperationName("pgque.process_once"),
+		attribute.String("orange.pgque.queue", s.queue),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "scheduler.process_once", resultLabel, start)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if _, err := s.store.pool.Exec(ctx, "SELECT pgque.force_next_tick($1)", s.queue); err != nil {
-		return 0, fmt.Errorf("pgque scheduler: force tick queue %q: %w", s.queue, err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: force tick queue %q: %w", s.queue, err)
+		captureSpanError(&spanErr, err)
+		return 0, err
 	}
 	if _, err := s.store.pool.Exec(ctx, "SELECT pgque.ticker($1)", s.queue); err != nil {
-		return 0, fmt.Errorf("pgque scheduler: tick queue %q: %w", s.queue, err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: tick queue %q: %w", s.queue, err)
+		captureSpanError(&spanErr, err)
+		return 0, err
 	}
 	msgs, err := s.receive(ctx)
 	if err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return 0, err
 	}
 	if len(msgs) == 0 {
+		resultLabel = "empty"
 		return 0, nil
 	}
 	for _, msg := range msgs {
 		if err := s.processMessage(ctx, msg); err != nil {
 			if errors.Is(err, ErrBuildLeaseHeld) {
+				resultLabel = "lease_held"
 				continue
 			}
 			if nackErr := s.nack(ctx, msg, err); nackErr != nil {
-				return 0, errors.Join(err, nackErr)
+				resultLabel = "error"
+				err := errors.Join(err, nackErr)
+				captureSpanError(&spanErr, err)
+				return 0, err
 			}
+			resultLabel = "nacked"
+			captureSpanError(&spanErr, err)
 			return len(msgs), nil
 		}
 	}
 	if err := s.ack(ctx, msgs[0].BatchID); err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return 0, err
 	}
 	return len(msgs), nil
@@ -248,16 +313,39 @@ func (s *PgQueScheduler) receive(ctx context.Context) ([]pgQueMessage, error) {
 }
 
 func (s *PgQueScheduler) processMessage(ctx context.Context, msg pgQueMessage) error {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.PgQueScheduler.processMessage",
+		semconv.DBSystemNamePostgreSQL,
+		semconv.DBOperationName("pgque.process_message"),
+		attribute.String("orange.message_type", msg.Type),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "scheduler.process_message", resultLabel, start,
+			attribute.String("orange.message_type", msg.Type),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if msg.Type != PgQueMappedSplitBuildEventType {
+		resultLabel = "ignored"
 		return nil
 	}
 	var payload pgQueBuildPayload
 	if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
-		return fmt.Errorf("pgque scheduler: decode build payload: %w", err)
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: decode build payload: %w", err)
+		captureSpanError(&spanErr, err)
+		return err
 	}
 	if payload.Lane == "" {
-		return fmt.Errorf("pgque scheduler: build payload lane is required")
+		resultLabel = "error"
+		err := fmt.Errorf("pgque scheduler: build payload lane is required")
+		captureSpanError(&spanErr, err)
+		return err
 	}
+	span.SetAttributes(attribute.String("orange.lane", payload.Lane))
 	if err := s.store.WithMappedSplitBuildLease(ctx, payload.Lane, func(ctx context.Context, lease BuildLease) error {
 		req, err := s.store.GetMappedSplitBuildRequest(ctx, payload.Lane)
 		if err != nil {
@@ -296,8 +384,11 @@ func (s *PgQueScheduler) processMessage(ctx context.Context, msg pgQueMessage) e
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrBuildLeaseHeld) {
+			resultLabel = "lease_held"
 			return nil
 		}
+		resultLabel = storeErrorResult(err)
+		captureSpanError(&spanErr, err)
 		return err
 	}
 	return nil

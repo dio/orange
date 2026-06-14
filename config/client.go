@@ -12,11 +12,13 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/dio/cherry"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
 
 	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"github.com/dio/orange/api/orange/config/v1/configv1connect"
+	"github.com/dio/orange/internal/otelx"
 	"github.com/dio/orange/mappedsplit"
 )
 
@@ -147,6 +149,8 @@ type mappedSplitBundleClient struct {
 // NewClient creates a mapped-split config client. BaseURL is required unless an
 // injected generated SnapshotService client is provided.
 func NewClient(opts ClientOptions) (*Client, error) {
+	otelx.AutoConfigureFromEnv()
+
 	normalizeClientOptions(&opts)
 	rpc := opts.RPCClient
 	if rpc == nil {
@@ -178,22 +182,54 @@ func (c *Client) Current() *Opened {
 // FetchMap fetches the latest typed mapped-split map or returns the cached map
 // when Orange reports Unchanged.
 func (c *Client) FetchMap(ctx context.Context) (*MapResult, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.Client.FetchMap")
+	start := time.Now()
+	var spanErr error
 	mapClient := c.mapFetcher()
-	return mapClient.Fetch(ctx)
+	result, err := mapClient.Fetch(ctx)
+	captureSpanError(&spanErr, err)
+	resultLabel := metricResult(err)
+	if err == nil && result.Unchanged {
+		resultLabel = "unchanged"
+	}
+	recordConfigOperation(ctx, "client.fetch_map", resultLabel, start)
+	finishConfigOperationSpan(span, resultLabel, spanErr)
+	return result, err
 }
 
 // FetchBundle fetches one component bundle resource from the authenticated lane.
 func (c *Client) FetchBundle(ctx context.Context, resource string) (*BundleResult, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.Client.FetchBundle",
+		attribute.String("orange.resource", resource),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "client.fetch_bundle", resultLabel, start)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	bundleClient, err := c.bundleFetcher(resource)
 	if err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return nil, err
 	}
 	result, err := bundleClient.Fetch(ctx)
 	if err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return nil, err
 	}
 	if result.Payload.GetFormat().GetMediaType() != mappedsplit.BundleMediaType {
-		return nil, fmt.Errorf("resource %s returned media type %q", resource, result.Payload.GetFormat().GetMediaType())
+		resultLabel = "error"
+		err := fmt.Errorf("resource %s returned media type %q", resource, result.Payload.GetFormat().GetMediaType())
+		captureSpanError(&spanErr, err)
+		return nil, err
+	}
+	if result.Unchanged {
+		resultLabel = "unchanged"
 	}
 	return result, nil
 }
@@ -201,9 +237,21 @@ func (c *Client) FetchBundle(ctx context.Context, resource string) (*BundleResul
 // Sync fetches the current mapped-split map, fetches only stale or missing
 // component resources, and swaps the client's active opened view.
 func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.Client.Sync")
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "client.sync", resultLabel, start)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	mapResult, err := c.FetchMap(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch split map: %w", err)
+		resultLabel = "error"
+		err := fmt.Errorf("fetch split map: %w", err)
+		captureSpanError(&spanErr, err)
+		return nil, err
 	}
 
 	c.mu.Lock()
@@ -211,6 +259,7 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 	c.mu.Unlock()
 
 	if mapResult.Unchanged && current != nil {
+		resultLabel = "unchanged"
 		return &SyncResult{
 			Unchanged: true,
 			Map:       mapResult,
@@ -227,6 +276,8 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		return result.BundleZstd, result.Unchanged, nil
 	})
 	if err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return nil, err
 	}
 
@@ -285,6 +336,8 @@ func (c *Client) bundleFetcher(resource string) (*mappedSplitBundleClient, error
 }
 
 func (c *mappedSplitMapClient) Fetch(ctx context.Context) (*MapResult, error) {
+	otelx.AutoConfigureFromEnv()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -311,7 +364,15 @@ func (c *mappedSplitMapClient) Fetch(ctx context.Context) (*MapResult, error) {
 func (c *mappedSplitMapClient) fetch(ctx context.Context) (*MapResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= c.retry.MaxAttempts; attempt++ {
+		start := time.Now()
 		result, err := c.fetchOnce(ctx)
+		resultLabel := metricResult(err)
+		if err == nil && result.Unchanged {
+			resultLabel = "unchanged"
+		}
+		recordConfigOperation(ctx, "client.fetch_map_attempt", resultLabel, start,
+			attribute.Int("orange.attempt", attempt),
+		)
 		if err == nil {
 			return result, nil
 		}
@@ -386,6 +447,8 @@ func (c *mappedSplitMapClient) cachedUnchanged() (*MapResult, error) {
 }
 
 func (c *mappedSplitBundleClient) Fetch(ctx context.Context) (*BundleResult, error) {
+	otelx.AutoConfigureFromEnv()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -412,7 +475,15 @@ func (c *mappedSplitBundleClient) Fetch(ctx context.Context) (*BundleResult, err
 func (c *mappedSplitBundleClient) fetch(ctx context.Context) (*BundleResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= c.retry.MaxAttempts; attempt++ {
+		start := time.Now()
 		result, err := c.fetchOnce(ctx)
+		resultLabel := metricResult(err)
+		if err == nil && result.Unchanged {
+			resultLabel = "unchanged"
+		}
+		recordConfigOperation(ctx, "client.fetch_bundle_attempt", resultLabel, start,
+			attribute.Int("orange.attempt", attempt),
+		)
 		if err == nil {
 			return result, nil
 		}

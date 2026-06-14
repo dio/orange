@@ -8,10 +8,14 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/dio/cherry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"github.com/dio/orange/api/orange/config/v1/configv1connect"
+	"github.com/dio/orange/internal/otelx"
 	"github.com/dio/orange/mappedsplit"
 	"github.com/dio/orange/producer"
 )
@@ -98,6 +102,8 @@ type Server struct {
 // NewServer creates a mapped-split server facade. Without auth hooks, fetches
 // fail closed.
 func NewServer(opts ServerOptions) *Server {
+	otelx.AutoConfigureFromEnv()
+
 	auth := opts.Authenticator
 	if auth == nil {
 		auth = FailClosedAuthenticator{}
@@ -126,6 +132,8 @@ func NewServer(opts ServerOptions) *Server {
 
 // Handler returns the Connect SnapshotService mount path and handler.
 func (s *Server) Handler() (string, http.Handler) {
+	otelx.AutoConfigureFromEnv()
+
 	mappedSplit := MappedSplitMapProvider(s.store)
 	if s.onDemandBuild != nil {
 		if coordinator, ok := s.store.(BuildCoordinator); ok {
@@ -138,7 +146,13 @@ func (s *Server) Handler() (string, http.Handler) {
 		}
 	}
 	svc := NewSnapshotServiceWithProviders(s.store, s.auth, s.lanes, mappedSplit)
-	return configv1connect.NewSnapshotServiceHandler(svc, s.handlerOptions...)
+	handlerOptions := append([]connect.HandlerOption(nil), s.handlerOptions...)
+	if interceptor, err := otelconnect.NewInterceptor(); err == nil {
+		handlerOptions = append(handlerOptions, connect.WithInterceptors(interceptor))
+	} else {
+		otelx.RecordSetupError(err)
+	}
+	return configv1connect.NewSnapshotServiceHandler(svc, handlerOptions...)
 }
 
 // Mount attaches the SnapshotService handler to mux.
@@ -152,6 +166,23 @@ func (s *Server) Mount(mux *http.ServeMux) string {
 // then publishes the typed map. Failed publishes leave the previous state
 // visible.
 func (s *Server) PublishMappedSplit(ctx context.Context, req MappedSplitRequest) (PublishResult, error) {
+	otelx.AutoConfigureFromEnv()
+	start := time.Now()
+	resultLabel := "success"
+	defer func() {
+		recordConfigOperation(ctx, "server.publish_mapped_split", resultLabel, start)
+	}()
+
+	ctx, span := configTracer.Start(ctx, "orange.config.Server.PublishMappedSplit",
+		trace.WithAttributes(
+			attribute.String("orange.lane", req.Lane),
+			attribute.String("orange.scope_kind", req.Selection.ScopeKind),
+			attribute.Int("orange.component_count", len(req.Components)),
+			attribute.Int("orange.map_revision", req.MapRevision),
+		),
+	)
+	defer span.End()
+
 	out, err := s.builder.Build(ctx, mappedsplit.BuildRequest{
 		Selection:               req.Selection,
 		Lane:                    req.Lane,
@@ -164,9 +195,20 @@ func (s *Server) PublishMappedSplit(ctx context.Context, req MappedSplitRequest)
 		Components:              req.Components,
 	})
 	if err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
 		return PublishResult{}, err
 	}
-	return s.store.PublishMappedSplit(ctx, out)
+	result, err := s.store.PublishMappedSplit(ctx, out)
+	if err != nil {
+		resultLabel = "error"
+		otelx.RecordError(span, err)
+		return PublishResult{}, err
+	}
+	if result.Map != nil {
+		span.SetAttributes(attribute.Int64("orange.map_version", int64(result.Map.Version)))
+	}
+	return result, nil
 }
 
 // Store returns the configured mapped-split store.

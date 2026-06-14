@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/proto"
 
 	configv1 "github.com/dio/orange/api/orange/config/v1"
@@ -57,9 +59,27 @@ func NewMemoryStore() *MemoryStore {
 
 // PublishMappedSplit publishes component resources first, then the typed map.
 // Failed publishes leave the previous state visible.
-func (s *MemoryStore) PublishMappedSplit(_ context.Context, out MappedSplitPublication) (PublishResult, error) {
+func (s *MemoryStore) PublishMappedSplit(ctx context.Context, out MappedSplitPublication) (PublishResult, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.PublishMappedSplit",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", out.Lane),
+		attribute.Int("orange.component_count", len(out.ComponentSeq)),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "store.publish_mapped_split", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if out.Lane == "" {
-		return PublishResult{}, fmt.Errorf("map lane is required")
+		resultLabel = "error"
+		err := fmt.Errorf("map lane is required")
+		captureSpanError(&spanErr, err)
+		return PublishResult{}, err
 	}
 
 	s.mu.Lock()
@@ -78,7 +98,10 @@ func (s *MemoryStore) PublishMappedSplit(_ context.Context, out MappedSplitPubli
 		nextVersion++
 		snap, err := snapshot.New(nextVersion, bundle.Payload, bundle.BundleZstd)
 		if err != nil {
-			return PublishResult{}, fmt.Errorf("publish %s: %w", component, err)
+			resultLabel = "error"
+			err := fmt.Errorf("publish %s: %w", component, err)
+			captureSpanError(&spanErr, err)
+			return PublishResult{}, err
 		}
 		nextItems[key] = snap
 		envelopes[bundle.Ref.Resource] = proto.Clone(snap.Envelope).(*configv1.SnapshotEnvelope)
@@ -87,7 +110,10 @@ func (s *MemoryStore) PublishMappedSplit(_ context.Context, out MappedSplitPubli
 	nextVersion++
 	typedMap, err := mappedsplit.NewMapSnapshot(nextVersion, out.Map)
 	if err != nil {
-		return PublishResult{}, fmt.Errorf("publish map: %w", err)
+		resultLabel = "error"
+		err := fmt.Errorf("publish map: %w", err)
+		captureSpanError(&spanErr, err)
+		return PublishResult{}, err
 	}
 
 	maps.Copy(s.items, nextItems)
@@ -102,38 +128,95 @@ func (s *MemoryStore) PublishMappedSplit(_ context.Context, out MappedSplitPubli
 }
 
 // FetchResource returns the current component resource for lane.
-func (s *MemoryStore) FetchResource(_ context.Context, lane string, resource string, lastVersion uint64, lastChecksum []byte) (*configv1.SnapshotEnvelope, bool, error) {
+func (s *MemoryStore) FetchResource(ctx context.Context, lane string, resource string, lastVersion uint64, lastChecksum []byte) (*configv1.SnapshotEnvelope, bool, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.FetchResource",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", lane),
+		attribute.String("orange.resource", resource),
+		attribute.Int64("orange.last_version", int64(lastVersion)),
+		attribute.Bool("orange.last_checksum_present", len(lastChecksum) != 0),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "store.fetch_resource", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	snap := s.items[itemKey(lane, resource)]
 	if snap == nil {
-		return nil, false, fmt.Errorf("%w: lane %q resource %q", snapshot.ErrNoSnapshot, lane, resource)
+		resultLabel = "not_found"
+		err := fmt.Errorf("%w: lane %q resource %q", snapshot.ErrNoSnapshot, lane, resource)
+		captureSpanError(&spanErr, err)
+		return nil, false, err
 	}
 	if lastVersion == snap.Version && bytes.Equal(lastChecksum, snap.Envelope.Checksum) {
+		resultLabel = "unchanged"
 		return nil, true, nil
 	}
 	return proto.Clone(snap.Envelope).(*configv1.SnapshotEnvelope), false, nil
 }
 
 // FetchMappedSplitMap returns the current typed mapped-split map for lane.
-func (s *MemoryStore) FetchMappedSplitMap(_ context.Context, lane string, lastVersion uint64, lastChecksum []byte) (*configv1.MappedSplitSnapshot, bool, error) {
+func (s *MemoryStore) FetchMappedSplitMap(ctx context.Context, lane string, lastVersion uint64, lastChecksum []byte) (*configv1.MappedSplitSnapshot, bool, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.FetchMappedSplitMap",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", lane),
+		attribute.Int64("orange.last_version", int64(lastVersion)),
+		attribute.Bool("orange.last_checksum_present", len(lastChecksum) != 0),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "store.fetch_mapped_split_map", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	typedMap := s.maps[lane]
 	if typedMap == nil {
-		return nil, false, fmt.Errorf("%w: mapped split map lane %q", snapshot.ErrNoSnapshot, lane)
+		resultLabel = "not_found"
+		err := fmt.Errorf("%w: mapped split map lane %q", snapshot.ErrNoSnapshot, lane)
+		captureSpanError(&spanErr, err)
+		return nil, false, err
 	}
 	if lastVersion == typedMap.Version && bytes.Equal(lastChecksum, typedMap.Checksum) {
+		resultLabel = "unchanged"
 		return nil, true, nil
 	}
 	return proto.Clone(typedMap).(*configv1.MappedSplitSnapshot), false, nil
 }
 
 // MarkMappedSplitDirty records the latest dirty build request for lane.
-func (s *MemoryStore) MarkMappedSplitDirty(_ context.Context, req BuildRequest) error {
+func (s *MemoryStore) MarkMappedSplitDirty(ctx context.Context, req BuildRequest) error {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.MarkMappedSplitDirty",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", req.Lane),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "coordinator.mark_dirty", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if err := req.Validate(); err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
 		return err
 	}
 	s.mu.Lock()
@@ -144,24 +227,59 @@ func (s *MemoryStore) MarkMappedSplitDirty(_ context.Context, req BuildRequest) 
 }
 
 // GetMappedSplitBuildRequest returns the dirty build request for lane.
-func (s *MemoryStore) GetMappedSplitBuildRequest(_ context.Context, lane string) (*BuildRequest, error) {
+func (s *MemoryStore) GetMappedSplitBuildRequest(ctx context.Context, lane string) (*BuildRequest, error) {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.GetMappedSplitBuildRequest",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", lane),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "coordinator.get_build_request", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if lane == "" {
-		return nil, fmt.Errorf("build request lane is required")
+		resultLabel = "error"
+		err := fmt.Errorf("build request lane is required")
+		captureSpanError(&spanErr, err)
+		return nil, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	req, ok := s.dirty[lane]
 	if !ok {
+		resultLabel = "empty"
 		return nil, nil
 	}
 	return &req, nil
 }
 
 // ClearMappedSplitDirty clears the dirty request for lease.Lane.
-func (s *MemoryStore) ClearMappedSplitDirty(_ context.Context, lease BuildLease, _ uint64) error {
+func (s *MemoryStore) ClearMappedSplitDirty(ctx context.Context, lease BuildLease, _ uint64) error {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.ClearMappedSplitDirty",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", lease.Lane),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "coordinator.clear_dirty", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if lease.Lane == "" {
-		return fmt.Errorf("%w: invalid build lease", ErrBuildLeaseLost)
+		resultLabel = "error"
+		err := fmt.Errorf("%w: invalid build lease", ErrBuildLeaseLost)
+		captureSpanError(&spanErr, err)
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,11 +290,31 @@ func (s *MemoryStore) ClearMappedSplitDirty(_ context.Context, lease BuildLease,
 
 // WithMappedSplitBuildLease serializes build callbacks per lane.
 func (s *MemoryStore) WithMappedSplitBuildLease(ctx context.Context, lane string, fn func(context.Context, BuildLease) error) error {
+	ctx, span := startConfigOperationSpan(ctx, "orange.config.MemoryStore.WithMappedSplitBuildLease",
+		attribute.String("orange.store", "memory"),
+		attribute.String("orange.lane", lane),
+	)
+	start := time.Now()
+	resultLabel := "success"
+	var spanErr error
+	defer func() {
+		recordConfigOperation(ctx, "coordinator.with_build_lease", resultLabel, start,
+			attribute.String("orange.store", "memory"),
+		)
+		finishConfigOperationSpan(span, resultLabel, spanErr)
+	}()
+
 	if lane == "" {
-		return fmt.Errorf("build lease lane is required")
+		resultLabel = "error"
+		err := fmt.Errorf("build lease lane is required")
+		captureSpanError(&spanErr, err)
+		return err
 	}
 	if fn == nil {
-		return fmt.Errorf("build lease callback is required")
+		resultLabel = "error"
+		err := fmt.Errorf("build lease callback is required")
+		captureSpanError(&spanErr, err)
+		return err
 	}
 
 	lock := s.buildLock(lane)
@@ -192,7 +330,12 @@ func (s *MemoryStore) WithMappedSplitBuildLease(ctx context.Context, lane string
 	}
 	s.mu.Unlock()
 
-	return fn(ctx, lease)
+	if err := fn(ctx, lease); err != nil {
+		resultLabel = "error"
+		captureSpanError(&spanErr, err)
+		return err
+	}
+	return nil
 }
 
 func (s *MemoryStore) buildLock(lane string) *sync.Mutex {
