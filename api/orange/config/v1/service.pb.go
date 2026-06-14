@@ -23,149 +23,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// FetchRequest is the unary cold-start or reconnect path. When both
-// last_version and last_checksum still match the server's current snapshot,
-// the server replies with Unchanged. Send last_version = 0 and omit
-// last_checksum for an unconditional fetch.
-type FetchRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// last_version is the highest version the client has applied; 0 = unconditional.
-	LastVersion uint64 `protobuf:"varint,2,opt,name=last_version,json=lastVersion,proto3" json:"last_version,omitempty"`
-	// last_checksum is the SHA-256 of the last accepted decompressed payload.
-	// When present it must be exactly 32 bytes. Omit (leave empty) for an
-	// unconditional fetch or when last_version alone is sufficient.
-	LastChecksum  []byte `protobuf:"bytes,3,opt,name=last_checksum,json=lastChecksum,proto3" json:"last_checksum,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FetchRequest) Reset() {
-	*x = FetchRequest{}
-	mi := &file_orange_config_v1_service_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FetchRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FetchRequest) ProtoMessage() {}
-
-func (x *FetchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_orange_config_v1_service_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FetchRequest.ProtoReflect.Descriptor instead.
-func (*FetchRequest) Descriptor() ([]byte, []int) {
-	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *FetchRequest) GetLastVersion() uint64 {
-	if x != nil {
-		return x.LastVersion
-	}
-	return 0
-}
-
-func (x *FetchRequest) GetLastChecksum() []byte {
-	if x != nil {
-		return x.LastChecksum
-	}
-	return nil
-}
-
-type FetchResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Result:
-	//
-	//	*FetchResponse_Snapshot
-	//	*FetchResponse_Unchanged
-	Result        isFetchResponse_Result `protobuf_oneof:"result"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FetchResponse) Reset() {
-	*x = FetchResponse{}
-	mi := &file_orange_config_v1_service_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FetchResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FetchResponse) ProtoMessage() {}
-
-func (x *FetchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_orange_config_v1_service_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FetchResponse.ProtoReflect.Descriptor instead.
-func (*FetchResponse) Descriptor() ([]byte, []int) {
-	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *FetchResponse) GetResult() isFetchResponse_Result {
-	if x != nil {
-		return x.Result
-	}
-	return nil
-}
-
-func (x *FetchResponse) GetSnapshot() *SnapshotEnvelope {
-	if x != nil {
-		if x, ok := x.Result.(*FetchResponse_Snapshot); ok {
-			return x.Snapshot
-		}
-	}
-	return nil
-}
-
-func (x *FetchResponse) GetUnchanged() *Unchanged {
-	if x != nil {
-		if x, ok := x.Result.(*FetchResponse_Unchanged); ok {
-			return x.Unchanged
-		}
-	}
-	return nil
-}
-
-type isFetchResponse_Result interface {
-	isFetchResponse_Result()
-}
-
-type FetchResponse_Snapshot struct {
-	Snapshot *SnapshotEnvelope `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"` // current snapshot (version or checksum changed)
-}
-
-type FetchResponse_Unchanged struct {
-	Unchanged *Unchanged `protobuf:"bytes,2,opt,name=unchanged,proto3,oneof"` // version and checksum still match; no payload
-}
-
-func (*FetchResponse_Snapshot) isFetchResponse_Result() {}
-
-func (*FetchResponse_Unchanged) isFetchResponse_Result() {}
-
-// Unchanged is returned by Fetch when the client's snapshot is already current.
+// Unchanged is returned when the client's version/checksum state is already current.
 type Unchanged struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -174,7 +32,7 @@ type Unchanged struct {
 
 func (x *Unchanged) Reset() {
 	*x = Unchanged{}
-	mi := &file_orange_config_v1_service_proto_msgTypes[2]
+	mi := &file_orange_config_v1_service_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -186,7 +44,7 @@ func (x *Unchanged) String() string {
 func (*Unchanged) ProtoMessage() {}
 
 func (x *Unchanged) ProtoReflect() protoreflect.Message {
-	mi := &file_orange_config_v1_service_proto_msgTypes[2]
+	mi := &file_orange_config_v1_service_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -199,25 +57,322 @@ func (x *Unchanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Unchanged.ProtoReflect.Descriptor instead.
 func (*Unchanged) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{0}
+}
+
+// FetchMappedSplitMapRequest is the typed mapped-split map polling request.
+type FetchMappedSplitMapRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// last_version is the highest typed map version the client has applied; 0 =
+	// unconditional.
+	LastVersion uint64 `protobuf:"varint,1,opt,name=last_version,json=lastVersion,proto3" json:"last_version,omitempty"`
+	// last_checksum is the SHA-256 of the last accepted typed map proto bytes.
+	LastChecksum  []byte `protobuf:"bytes,2,opt,name=last_checksum,json=lastChecksum,proto3" json:"last_checksum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchMappedSplitMapRequest) Reset() {
+	*x = FetchMappedSplitMapRequest{}
+	mi := &file_orange_config_v1_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMappedSplitMapRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMappedSplitMapRequest) ProtoMessage() {}
+
+func (x *FetchMappedSplitMapRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMappedSplitMapRequest.ProtoReflect.Descriptor instead.
+func (*FetchMappedSplitMapRequest) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *FetchMappedSplitMapRequest) GetLastVersion() uint64 {
+	if x != nil {
+		return x.LastVersion
+	}
+	return 0
+}
+
+func (x *FetchMappedSplitMapRequest) GetLastChecksum() []byte {
+	if x != nil {
+		return x.LastChecksum
+	}
+	return nil
+}
+
+type FetchMappedSplitMapResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Result:
+	//
+	//	*FetchMappedSplitMapResponse_Snapshot
+	//	*FetchMappedSplitMapResponse_Unchanged
+	Result        isFetchMappedSplitMapResponse_Result `protobuf_oneof:"result"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchMappedSplitMapResponse) Reset() {
+	*x = FetchMappedSplitMapResponse{}
+	mi := &file_orange_config_v1_service_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMappedSplitMapResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMappedSplitMapResponse) ProtoMessage() {}
+
+func (x *FetchMappedSplitMapResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_service_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMappedSplitMapResponse.ProtoReflect.Descriptor instead.
+func (*FetchMappedSplitMapResponse) Descriptor() ([]byte, []int) {
 	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{2}
 }
+
+func (x *FetchMappedSplitMapResponse) GetResult() isFetchMappedSplitMapResponse_Result {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *FetchMappedSplitMapResponse) GetSnapshot() *MappedSplitSnapshot {
+	if x != nil {
+		if x, ok := x.Result.(*FetchMappedSplitMapResponse_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *FetchMappedSplitMapResponse) GetUnchanged() *Unchanged {
+	if x != nil {
+		if x, ok := x.Result.(*FetchMappedSplitMapResponse_Unchanged); ok {
+			return x.Unchanged
+		}
+	}
+	return nil
+}
+
+type isFetchMappedSplitMapResponse_Result interface {
+	isFetchMappedSplitMapResponse_Result()
+}
+
+type FetchMappedSplitMapResponse_Snapshot struct {
+	Snapshot *MappedSplitSnapshot `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"` // current typed map
+}
+
+type FetchMappedSplitMapResponse_Unchanged struct {
+	Unchanged *Unchanged `protobuf:"bytes,2,opt,name=unchanged,proto3,oneof"` // version and checksum still match; no map body
+}
+
+func (*FetchMappedSplitMapResponse_Snapshot) isFetchMappedSplitMapResponse_Result() {}
+
+func (*FetchMappedSplitMapResponse_Unchanged) isFetchMappedSplitMapResponse_Result() {}
+
+// FetchMappedSplitBundleRequest fetches one component bundle resource from the
+// authenticated lane. The resource value must come from the current typed map.
+type FetchMappedSplitBundleRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Resource string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	// last_version is the highest component snapshot version the client has
+	// applied for this resource; 0 = unconditional.
+	LastVersion uint64 `protobuf:"varint,2,opt,name=last_version,json=lastVersion,proto3" json:"last_version,omitempty"`
+	// last_checksum is the SHA-256 of the last accepted decompressed ConfigPayload
+	// proto bytes for this resource.
+	LastChecksum  []byte `protobuf:"bytes,3,opt,name=last_checksum,json=lastChecksum,proto3" json:"last_checksum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchMappedSplitBundleRequest) Reset() {
+	*x = FetchMappedSplitBundleRequest{}
+	mi := &file_orange_config_v1_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMappedSplitBundleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMappedSplitBundleRequest) ProtoMessage() {}
+
+func (x *FetchMappedSplitBundleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMappedSplitBundleRequest.ProtoReflect.Descriptor instead.
+func (*FetchMappedSplitBundleRequest) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FetchMappedSplitBundleRequest) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *FetchMappedSplitBundleRequest) GetLastVersion() uint64 {
+	if x != nil {
+		return x.LastVersion
+	}
+	return 0
+}
+
+func (x *FetchMappedSplitBundleRequest) GetLastChecksum() []byte {
+	if x != nil {
+		return x.LastChecksum
+	}
+	return nil
+}
+
+type FetchMappedSplitBundleResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Result:
+	//
+	//	*FetchMappedSplitBundleResponse_Snapshot
+	//	*FetchMappedSplitBundleResponse_Unchanged
+	Result        isFetchMappedSplitBundleResponse_Result `protobuf_oneof:"result"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchMappedSplitBundleResponse) Reset() {
+	*x = FetchMappedSplitBundleResponse{}
+	mi := &file_orange_config_v1_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchMappedSplitBundleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchMappedSplitBundleResponse) ProtoMessage() {}
+
+func (x *FetchMappedSplitBundleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchMappedSplitBundleResponse.ProtoReflect.Descriptor instead.
+func (*FetchMappedSplitBundleResponse) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FetchMappedSplitBundleResponse) GetResult() isFetchMappedSplitBundleResponse_Result {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *FetchMappedSplitBundleResponse) GetSnapshot() *SnapshotEnvelope {
+	if x != nil {
+		if x, ok := x.Result.(*FetchMappedSplitBundleResponse_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *FetchMappedSplitBundleResponse) GetUnchanged() *Unchanged {
+	if x != nil {
+		if x, ok := x.Result.(*FetchMappedSplitBundleResponse_Unchanged); ok {
+			return x.Unchanged
+		}
+	}
+	return nil
+}
+
+type isFetchMappedSplitBundleResponse_Result interface {
+	isFetchMappedSplitBundleResponse_Result()
+}
+
+type FetchMappedSplitBundleResponse_Snapshot struct {
+	Snapshot *SnapshotEnvelope `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"` // current component bundle snapshot
+}
+
+type FetchMappedSplitBundleResponse_Unchanged struct {
+	Unchanged *Unchanged `protobuf:"bytes,2,opt,name=unchanged,proto3,oneof"` // version and checksum still match; no payload
+}
+
+func (*FetchMappedSplitBundleResponse_Snapshot) isFetchMappedSplitBundleResponse_Result() {}
+
+func (*FetchMappedSplitBundleResponse_Unchanged) isFetchMappedSplitBundleResponse_Result() {}
 
 var File_orange_config_v1_service_proto protoreflect.FileDescriptor
 
 const file_orange_config_v1_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1eorange/config/v1/service.proto\x12\x10orange.config.v1\x1a\x1bbuf/validate/validate.proto\x1a!orange/auth/v1/auth_options.proto\x1a\x1forange/config/v1/snapshot.proto\"\xde\x01\n" +
-	"\fFetchRequest\x12!\n" +
-	"\flast_version\x18\x02 \x01(\x04R\vlastVersion\x12\xaa\x01\n" +
-	"\rlast_checksum\x18\x03 \x01(\fB\x84\x01\xbaH\x80\x01\xba\x01}\n" +
-	"\x19fetch_checksum_sha256_len\x129last_checksum must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\flastChecksum\"\x9f\x01\n" +
-	"\rFetchResponse\x12@\n" +
+	"\x1eorange/config/v1/service.proto\x12\x10orange.config.v1\x1a\x1bbuf/validate/validate.proto\x1a!orange/auth/v1/auth_options.proto\x1a\x1forange/config/v1/snapshot.proto\"\v\n" +
+	"\tUnchanged\"\xfa\x01\n" +
+	"\x1aFetchMappedSplitMapRequest\x12!\n" +
+	"\flast_version\x18\x01 \x01(\x04R\vlastVersion\x12\xb8\x01\n" +
+	"\rlast_checksum\x18\x02 \x01(\fB\x92\x01\xbaH\x8e\x01\xba\x01\x8a\x01\n" +
+	"&fetch_mapped_split_checksum_sha256_len\x129last_checksum must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\flastChecksum\"\xb0\x01\n" +
+	"\x1bFetchMappedSplitMapResponse\x12C\n" +
+	"\bsnapshot\x18\x01 \x01(\v2%.orange.config.v1.MappedSplitSnapshotH\x00R\bsnapshot\x12;\n" +
+	"\tunchanged\x18\x02 \x01(\v2\x1b.orange.config.v1.UnchangedH\x00R\tunchangedB\x0f\n" +
+	"\x06result\x12\x05\xbaH\x02\b\x01\"\xa9\x02\n" +
+	"\x1dFetchMappedSplitBundleRequest\x12#\n" +
+	"\bresource\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bresource\x12!\n" +
+	"\flast_version\x18\x02 \x01(\x04R\vlastVersion\x12\xbf\x01\n" +
+	"\rlast_checksum\x18\x03 \x01(\fB\x99\x01\xbaH\x95\x01\xba\x01\x91\x01\n" +
+	"-fetch_mapped_split_bundle_checksum_sha256_len\x129last_checksum must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\flastChecksum\"\xb0\x01\n" +
+	"\x1eFetchMappedSplitBundleResponse\x12@\n" +
 	"\bsnapshot\x18\x01 \x01(\v2\".orange.config.v1.SnapshotEnvelopeH\x00R\bsnapshot\x12;\n" +
 	"\tunchanged\x18\x02 \x01(\v2\x1b.orange.config.v1.UnchangedH\x00R\tunchangedB\x0f\n" +
-	"\x06result\x12\x05\xbaH\x02\b\x01\"\v\n" +
-	"\tUnchanged2d\n" +
-	"\x0fSnapshotService\x12Q\n" +
-	"\x05Fetch\x12\x1e.orange.config.v1.FetchRequest\x1a\x1f.orange.config.v1.FetchResponse\"\a\xea\xb5S\x03\n" +
+	"\x06result\x12\x05\xbaH\x02\b\x012\x95\x02\n" +
+	"\x0fSnapshotService\x12{\n" +
+	"\x13FetchMappedSplitMap\x12,.orange.config.v1.FetchMappedSplitMapRequest\x1a-.orange.config.v1.FetchMappedSplitMapResponse\"\a\xea\xb5S\x03\n" +
+	"\x01\x03\x12\x84\x01\n" +
+	"\x16FetchMappedSplitBundle\x12/.orange.config.v1.FetchMappedSplitBundleRequest\x1a0.orange.config.v1.FetchMappedSplitBundleResponse\"\a\xea\xb5S\x03\n" +
 	"\x01\x03B\xbb\x01\n" +
 	"\x14com.orange.config.v1B\fServiceProtoP\x01Z3github.com/dio/orange/api/orange/config/v1;configv1\xa2\x02\x03OCX\xaa\x02\x10Orange.Config.V1\xca\x02\x10Orange\\Config\\V1\xe2\x02\x1cOrange\\Config\\V1\\GPBMetadata\xea\x02\x12Orange::Config::V1b\x06proto3"
 
@@ -233,23 +388,30 @@ func file_orange_config_v1_service_proto_rawDescGZIP() []byte {
 	return file_orange_config_v1_service_proto_rawDescData
 }
 
-var file_orange_config_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_orange_config_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_orange_config_v1_service_proto_goTypes = []any{
-	(*FetchRequest)(nil),     // 0: orange.config.v1.FetchRequest
-	(*FetchResponse)(nil),    // 1: orange.config.v1.FetchResponse
-	(*Unchanged)(nil),        // 2: orange.config.v1.Unchanged
-	(*SnapshotEnvelope)(nil), // 3: orange.config.v1.SnapshotEnvelope
+	(*Unchanged)(nil),                      // 0: orange.config.v1.Unchanged
+	(*FetchMappedSplitMapRequest)(nil),     // 1: orange.config.v1.FetchMappedSplitMapRequest
+	(*FetchMappedSplitMapResponse)(nil),    // 2: orange.config.v1.FetchMappedSplitMapResponse
+	(*FetchMappedSplitBundleRequest)(nil),  // 3: orange.config.v1.FetchMappedSplitBundleRequest
+	(*FetchMappedSplitBundleResponse)(nil), // 4: orange.config.v1.FetchMappedSplitBundleResponse
+	(*MappedSplitSnapshot)(nil),            // 5: orange.config.v1.MappedSplitSnapshot
+	(*SnapshotEnvelope)(nil),               // 6: orange.config.v1.SnapshotEnvelope
 }
 var file_orange_config_v1_service_proto_depIdxs = []int32{
-	3, // 0: orange.config.v1.FetchResponse.snapshot:type_name -> orange.config.v1.SnapshotEnvelope
-	2, // 1: orange.config.v1.FetchResponse.unchanged:type_name -> orange.config.v1.Unchanged
-	0, // 2: orange.config.v1.SnapshotService.Fetch:input_type -> orange.config.v1.FetchRequest
-	1, // 3: orange.config.v1.SnapshotService.Fetch:output_type -> orange.config.v1.FetchResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5, // 0: orange.config.v1.FetchMappedSplitMapResponse.snapshot:type_name -> orange.config.v1.MappedSplitSnapshot
+	0, // 1: orange.config.v1.FetchMappedSplitMapResponse.unchanged:type_name -> orange.config.v1.Unchanged
+	6, // 2: orange.config.v1.FetchMappedSplitBundleResponse.snapshot:type_name -> orange.config.v1.SnapshotEnvelope
+	0, // 3: orange.config.v1.FetchMappedSplitBundleResponse.unchanged:type_name -> orange.config.v1.Unchanged
+	1, // 4: orange.config.v1.SnapshotService.FetchMappedSplitMap:input_type -> orange.config.v1.FetchMappedSplitMapRequest
+	3, // 5: orange.config.v1.SnapshotService.FetchMappedSplitBundle:input_type -> orange.config.v1.FetchMappedSplitBundleRequest
+	2, // 6: orange.config.v1.SnapshotService.FetchMappedSplitMap:output_type -> orange.config.v1.FetchMappedSplitMapResponse
+	4, // 7: orange.config.v1.SnapshotService.FetchMappedSplitBundle:output_type -> orange.config.v1.FetchMappedSplitBundleResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_orange_config_v1_service_proto_init() }
@@ -258,9 +420,13 @@ func file_orange_config_v1_service_proto_init() {
 		return
 	}
 	file_orange_config_v1_snapshot_proto_init()
-	file_orange_config_v1_service_proto_msgTypes[1].OneofWrappers = []any{
-		(*FetchResponse_Snapshot)(nil),
-		(*FetchResponse_Unchanged)(nil),
+	file_orange_config_v1_service_proto_msgTypes[2].OneofWrappers = []any{
+		(*FetchMappedSplitMapResponse_Snapshot)(nil),
+		(*FetchMappedSplitMapResponse_Unchanged)(nil),
+	}
+	file_orange_config_v1_service_proto_msgTypes[4].OneofWrappers = []any{
+		(*FetchMappedSplitBundleResponse_Snapshot)(nil),
+		(*FetchMappedSplitBundleResponse_Unchanged)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -268,7 +434,7 @@ func file_orange_config_v1_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orange_config_v1_service_proto_rawDesc), len(file_orange_config_v1_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

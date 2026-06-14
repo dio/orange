@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
-	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	configv1 "github.com/dio/orange/api/orange/config/v1"
 )
 
 const (
@@ -70,10 +71,17 @@ func NewBuilder(opts Options) *Builder {
 // ConfigPayload. lane is the snapshot lane for this publish; it is written
 // into SnapshotMetadata so readers can verify which lane they received.
 // The returned BuildOutput contains immutable copies of all byte slices.
-func (b *Builder) Build(_ context.Context, sel Selection, lane string, result BuildResult) (BuildOutput, error) {
+func (b *Builder) Build(ctx context.Context, sel Selection, lane string, result BuildResult) (BuildOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return BuildOutput{}, err
+	}
+
 	blob, manifest, err := cherry.BuildWithManifest(result.Input)
 	if err != nil {
 		return BuildOutput{}, fmt.Errorf("build cherry pack: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return BuildOutput{}, err
 	}
 
 	bundle := cherry.NewBundle(sel.ScopeKind, sel.ScopeID, result.Scopes, blob, manifest)
@@ -81,6 +89,9 @@ func (b *Builder) Build(_ context.Context, sel Selection, lane string, result Bu
 	compressed, err := cherry.EncodeBundleZstd(bundle)
 	if err != nil {
 		return BuildOutput{}, fmt.Errorf("encode cherry bundle zstd: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return BuildOutput{}, err
 	}
 
 	checksum := sha256.Sum256(compressed)

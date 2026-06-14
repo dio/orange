@@ -10,29 +10,32 @@ promote it into `DESIGN.md` in the same change.
 
 - Orange is producer/control-plane side only. It turns domain config into
   normalized `cherry.Input`, packs Cherry bundles, wraps them in snapshot
-  payloads, and serves them over Connect.
+  payloads, and exposes SnapshotService handlers for an embedder-owned server.
 - Plum is the data plane. Do not add request matching, upstream picking,
   provider auth injection, Envoy bootstrap, or Plum generation publication to
   Orange.
 - Orange has no universal tenancy model. Tenant, user, workspace, partition,
   key, and policy ownership belongs to the embedding control plane.
-- Snapshot fetch lane selection comes from authenticated client identity:
-  principal -> partition/snapshot lane. Do not add lane selection to
-  `FetchRequest` unless `DESIGN.md` changes first.
+- Snapshot lane selection comes from authenticated client identity:
+  principal -> mapped-split lane. Do not add lane selection to request messages
+  unless `DESIGN.md` changes first.
 - Published snapshots are immutable. Mutation/publish paths must not expose
   partially built snapshots, and failed mutations must leave the previous
   snapshot active.
-- Initial data-plane delivery is polling via `SnapshotService.Fetch` with
-  `last_version` and `last_checksum`. Do not add server streaming as part of
-  initial implementation work.
+- Initial data-plane delivery is polling via
+  `SnapshotService.FetchMappedSplitMap` and
+  `SnapshotService.FetchMappedSplitBundle` with `last_version` and
+  `last_checksum`. Do not add server streaming as part of initial
+  implementation work.
 
 ## Cherry, Plum, And API Boundaries
 
 - Cherry owns the bundle format and validation. Orange should call Cherry APIs
   such as `BuildWithManifest`, `NewBundle`, and `EncodeBundleZstd`; it should
   not reimplement Cherry packing.
-- Plum consumes bundle bytes from `SnapshotService.Fetch`. Orange should not
-  require Plum to understand Orange-specific source or tenancy models.
+- Plum consumes the typed mapped-split map and component bundle bytes from
+  `SnapshotService`. Orange should not require Plum to understand
+  Orange-specific source or tenancy models.
 - `SnapshotEnvelope.payload` should contain a `ConfigPayload` wrapper with
   bundle bytes and operational metadata. Keep metadata diagnostic and
   delivery-oriented.
@@ -40,13 +43,16 @@ promote it into `DESIGN.md` in the same change.
   `format`, `payload`, and `payload_sha256`. Do not leak Cherry-specific names
   into the wire API; Cherry is Orange's internal bundle implementation.
 - Use the existing protobuf services:
-  - `orange.config.v1.SnapshotService.Fetch`
-  - `orange.config.admin.v1.ConfigAdminService.PublishSnapshot`
+  - `orange.config.v1.SnapshotService.FetchMappedSplitMap`
+  - `orange.config.v1.SnapshotService.FetchMappedSplitBundle`
   Do not introduce parallel `BundleService`, `GetBundle`,
-  `SnapshotAdminService`, or `MutateSnapshot` APIs.
-- Admin publish expands the existing `PublishSnapshot` RPC. In-process
-  embedders may pass typed prepared data through Go APIs, but remote admin
-  clients use protobuf bytes.
+  `SnapshotAdminService`, `ConfigAdminService`, or `MutateSnapshot` APIs.
+- Remote admin publication is intentionally deferred. Keep mapped-split
+  publication in-process or embedder-owned until the production mutation
+  contract is clear.
+- Do not add an Orange-owned standalone server helper or recommend running
+  Orange in a separate server goroutine. Production embedders should attach
+  `config.Server` or `config.SnapshotService` to their own mux/router.
 
 ## Secret Handling
 
@@ -80,10 +86,11 @@ promote it into `DESIGN.md` in the same change.
 - Run focused package tests while iterating. Run `go test ./...` before
   reporting any implementation task complete.
 - Run `go test ./... -race` for changes touching snapshot publication,
-  goroutines, caches/stores, server lifecycle, handler attachment, auth/lane
-  resolution, or concurrent fetch/publish behavior.
-- Connect service changes need handler-level tests with `httptest.Server` or a
-  Connect client against an in-memory server. Cover success and error mapping.
+  goroutines, caches/stores, handler attachment, auth/lane resolution, or
+  concurrent fetch/publish behavior.
+- Connect service changes need handler-level tests with `httptest.Server`,
+  `bufconn`, or an embedder-owned mux mounting `SnapshotService`. Cover success
+  and error mapping.
 - Snapshot manager changes need concurrency tests proving:
   - fetch during publish never observes a partial snapshot
   - failed publish keeps the previous snapshot active
@@ -98,22 +105,22 @@ promote it into `DESIGN.md` in the same change.
   Orange path:
 
   ```text
-  prepared data
-    -> ConfigAdminService.PublishSnapshot
-    -> MutationCallback
+  prepared component input
     -> cherry.Input
     -> Cherry bundle
     -> ConfigPayload
-    -> SnapshotEnvelope
-    -> SnapshotService.Fetch
+    -> SnapshotEnvelope component resource
+    -> typed MappedSplitSnapshot
+    -> SnapshotService.FetchMappedSplitMap
+    -> SnapshotService.FetchMappedSplitBundle
     -> decode ConfigPayload
     -> cherry.OpenBundleZstd
   ```
 
 - E2E tests should use real generated Connect clients/handlers, not direct
   method calls, for at least one publish/fetch round trip.
-- E2E tests must assert `Fetch` returns `Unchanged` when `last_version` and
-  `last_checksum` match.
+- E2E tests must assert mapped-split map and bundle fetches return `Unchanged`
+  when `last_version` and `last_checksum` match.
 - E2E tests must assert the fetched payload contains a valid Cherry bundle that
   Cherry can open.
 - E2E tests must not require Plum to run. Plum integration belongs in a
@@ -145,3 +152,11 @@ promote it into `DESIGN.md` in the same change.
 - Update `IMPLEMENTATION.md` for task status, disposable prompts, and execution
   sequencing.
 - Update user-facing README-style docs only when behavior is available to run.
+
+## Local Agent Skill
+
+Use `.agents/skills/integrate-orange` when asked to connect Orange to producer
+control-plane code, snapshot servers, mapped-split consumers, lane resolution,
+or mapped-split delivery. That skill describes how to keep embedding
+source/tenancy logic outside Orange while producing typed maps and
+`ConfigPayload` component snapshots safely.

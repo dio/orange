@@ -8,9 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"google.golang.org/protobuf/proto"
+
 	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"github.com/dio/orange/producer"
-	"google.golang.org/protobuf/proto"
 )
 
 // ErrVersionMismatch is returned by Publish when the caller supplied an
@@ -24,11 +25,17 @@ var ErrNoSnapshot = errors.New("no snapshot for lane")
 // ErrNoCallback is returned by Publish when no mutation callback is registered.
 var ErrNoCallback = errors.New("no mutation callback registered")
 
+// ErrNoBuilder is returned by Publish when no producer builder is configured.
+var ErrNoBuilder = errors.New("no producer builder configured")
+
 // MutationRequest carries the opaque context for one publication. The callback
 // reads from this to know what to build.
 type MutationRequest struct {
 	Selection producer.Selection
 	Lane      string
+	// Resource is an optional named resource inside Lane. Empty is the default
+	// resource for that lane.
+	Resource string
 	// ExpectedVersion gates the publish; 0 means no version check.
 	ExpectedVersion uint64
 	// ExpectedChecksum gates the publish; nil means no checksum check.
@@ -53,6 +60,11 @@ type PublishResult struct {
 // pointer means no snapshot has been published yet.
 type laneState struct {
 	snap atomic.Pointer[Snapshot]
+}
+
+type laneResourceKey struct {
+	lane     string
+	resource string
 }
 
 // Manager owns the per-lane snapshot state and serializes mutations while
@@ -107,10 +119,13 @@ func (m *Manager) PublishWithResult(ctx context.Context, req MutationRequest) (P
 	if m.callback == nil {
 		return PublishResult{}, ErrNoCallback
 	}
+	if m.builder == nil {
+		return PublishResult{}, ErrNoBuilder
+	}
 
 	// Check optimistic concurrency before calling the callback so the callback
 	// does not run against a stale precondition.
-	ls := m.getOrCreateLane(req.Lane)
+	ls := m.getOrCreateLane(req.Lane, req.Resource)
 	current := ls.snap.Load()
 	var previousVersion uint64
 	if current != nil {
@@ -154,7 +169,13 @@ func (m *Manager) PublishWithResult(ctx context.Context, req MutationRequest) (P
 //
 // Fetch is lock-free on the read path; Publish does not block Fetch.
 func (m *Manager) Fetch(lane string, lastVersion uint64, lastChecksum []byte) (*configv1.SnapshotEnvelope, bool, error) {
-	ls, ok := m.loadLane(lane)
+	return m.FetchResource(lane, "", lastVersion, lastChecksum)
+}
+
+// FetchResource returns the current snapshot envelope for a named resource
+// inside lane. Empty resource is the lane's default resource.
+func (m *Manager) FetchResource(lane string, resource string, lastVersion uint64, lastChecksum []byte) (*configv1.SnapshotEnvelope, bool, error) {
+	ls, ok := m.loadLane(lane, resource)
 	if !ok {
 		return nil, false, ErrNoSnapshot
 	}
@@ -176,7 +197,13 @@ func (m *Manager) Fetch(lane string, lastVersion uint64, lastChecksum []byte) (*
 // has been published. It never blocks. The returned snapshot is independent of
 // the stored copy.
 func (m *Manager) Current(lane string) *Snapshot {
-	ls, ok := m.loadLane(lane)
+	return m.CurrentResource(lane, "")
+}
+
+// CurrentResource returns a clone of the current snapshot for resource inside
+// lane, or nil if none has been published.
+func (m *Manager) CurrentResource(lane string, resource string) *Snapshot {
+	ls, ok := m.loadLane(lane, resource)
 	if !ok {
 		return nil
 	}
@@ -187,17 +214,21 @@ func (m *Manager) Current(lane string) *Snapshot {
 	return snap.clone()
 }
 
-func (m *Manager) getOrCreateLane(lane string) *laneState {
-	v, _ := m.lanes.LoadOrStore(lane, &laneState{})
+func (m *Manager) getOrCreateLane(lane string, resource string) *laneState {
+	v, _ := m.lanes.LoadOrStore(resourceKey(lane, resource), &laneState{})
 	return v.(*laneState)
 }
 
-func (m *Manager) loadLane(lane string) (*laneState, bool) {
-	v, ok := m.lanes.Load(lane)
+func (m *Manager) loadLane(lane string, resource string) (*laneState, bool) {
+	v, ok := m.lanes.Load(resourceKey(lane, resource))
 	if !ok {
 		return nil, false
 	}
 	return v.(*laneState), true
+}
+
+func resourceKey(lane string, resource string) laneResourceKey {
+	return laneResourceKey{lane: lane, resource: resource}
 }
 
 func checkPrecondition(current *Snapshot, expectedVersion uint64, expectedChecksum []byte) error {

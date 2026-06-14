@@ -33,16 +33,23 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SnapshotServiceFetchProcedure is the fully-qualified name of the SnapshotService's Fetch RPC.
-	SnapshotServiceFetchProcedure = "/orange.config.v1.SnapshotService/Fetch"
+	// SnapshotServiceFetchMappedSplitMapProcedure is the fully-qualified name of the SnapshotService's
+	// FetchMappedSplitMap RPC.
+	SnapshotServiceFetchMappedSplitMapProcedure = "/orange.config.v1.SnapshotService/FetchMappedSplitMap"
+	// SnapshotServiceFetchMappedSplitBundleProcedure is the fully-qualified name of the
+	// SnapshotService's FetchMappedSplitBundle RPC.
+	SnapshotServiceFetchMappedSplitBundleProcedure = "/orange.config.v1.SnapshotService/FetchMappedSplitBundle"
 )
 
 // SnapshotServiceClient is a client for the orange.config.v1.SnapshotService service.
 type SnapshotServiceClient interface {
-	// Fetch is the unary cold-start or reconnect path.
-	// When last_version and last_checksum both still match the current snapshot,
-	// the server returns Unchanged. Otherwise it returns the current envelope.
-	Fetch(context.Context, *connect.Request[v1.FetchRequest]) (*connect.Response[v1.FetchResponse], error)
+	// FetchMappedSplitMap returns the typed mapped-split SoTW map for the
+	// authenticated lane. Component bundles referenced by the map are fetched
+	// separately through FetchMappedSplitBundle.
+	FetchMappedSplitMap(context.Context, *connect.Request[v1.FetchMappedSplitMapRequest]) (*connect.Response[v1.FetchMappedSplitMapResponse], error)
+	// FetchMappedSplitBundle returns one component bundle resource referenced by
+	// the typed mapped-split map for the authenticated lane.
+	FetchMappedSplitBundle(context.Context, *connect.Request[v1.FetchMappedSplitBundleRequest]) (*connect.Response[v1.FetchMappedSplitBundleResponse], error)
 }
 
 // NewSnapshotServiceClient constructs a client for the orange.config.v1.SnapshotService service. By
@@ -56,10 +63,16 @@ func NewSnapshotServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	snapshotServiceMethods := v1.File_orange_config_v1_service_proto.Services().ByName("SnapshotService").Methods()
 	return &snapshotServiceClient{
-		fetch: connect.NewClient[v1.FetchRequest, v1.FetchResponse](
+		fetchMappedSplitMap: connect.NewClient[v1.FetchMappedSplitMapRequest, v1.FetchMappedSplitMapResponse](
 			httpClient,
-			baseURL+SnapshotServiceFetchProcedure,
-			connect.WithSchema(snapshotServiceMethods.ByName("Fetch")),
+			baseURL+SnapshotServiceFetchMappedSplitMapProcedure,
+			connect.WithSchema(snapshotServiceMethods.ByName("FetchMappedSplitMap")),
+			connect.WithClientOptions(opts...),
+		),
+		fetchMappedSplitBundle: connect.NewClient[v1.FetchMappedSplitBundleRequest, v1.FetchMappedSplitBundleResponse](
+			httpClient,
+			baseURL+SnapshotServiceFetchMappedSplitBundleProcedure,
+			connect.WithSchema(snapshotServiceMethods.ByName("FetchMappedSplitBundle")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -67,20 +80,29 @@ func NewSnapshotServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // snapshotServiceClient implements SnapshotServiceClient.
 type snapshotServiceClient struct {
-	fetch *connect.Client[v1.FetchRequest, v1.FetchResponse]
+	fetchMappedSplitMap    *connect.Client[v1.FetchMappedSplitMapRequest, v1.FetchMappedSplitMapResponse]
+	fetchMappedSplitBundle *connect.Client[v1.FetchMappedSplitBundleRequest, v1.FetchMappedSplitBundleResponse]
 }
 
-// Fetch calls orange.config.v1.SnapshotService.Fetch.
-func (c *snapshotServiceClient) Fetch(ctx context.Context, req *connect.Request[v1.FetchRequest]) (*connect.Response[v1.FetchResponse], error) {
-	return c.fetch.CallUnary(ctx, req)
+// FetchMappedSplitMap calls orange.config.v1.SnapshotService.FetchMappedSplitMap.
+func (c *snapshotServiceClient) FetchMappedSplitMap(ctx context.Context, req *connect.Request[v1.FetchMappedSplitMapRequest]) (*connect.Response[v1.FetchMappedSplitMapResponse], error) {
+	return c.fetchMappedSplitMap.CallUnary(ctx, req)
+}
+
+// FetchMappedSplitBundle calls orange.config.v1.SnapshotService.FetchMappedSplitBundle.
+func (c *snapshotServiceClient) FetchMappedSplitBundle(ctx context.Context, req *connect.Request[v1.FetchMappedSplitBundleRequest]) (*connect.Response[v1.FetchMappedSplitBundleResponse], error) {
+	return c.fetchMappedSplitBundle.CallUnary(ctx, req)
 }
 
 // SnapshotServiceHandler is an implementation of the orange.config.v1.SnapshotService service.
 type SnapshotServiceHandler interface {
-	// Fetch is the unary cold-start or reconnect path.
-	// When last_version and last_checksum both still match the current snapshot,
-	// the server returns Unchanged. Otherwise it returns the current envelope.
-	Fetch(context.Context, *connect.Request[v1.FetchRequest]) (*connect.Response[v1.FetchResponse], error)
+	// FetchMappedSplitMap returns the typed mapped-split SoTW map for the
+	// authenticated lane. Component bundles referenced by the map are fetched
+	// separately through FetchMappedSplitBundle.
+	FetchMappedSplitMap(context.Context, *connect.Request[v1.FetchMappedSplitMapRequest]) (*connect.Response[v1.FetchMappedSplitMapResponse], error)
+	// FetchMappedSplitBundle returns one component bundle resource referenced by
+	// the typed mapped-split map for the authenticated lane.
+	FetchMappedSplitBundle(context.Context, *connect.Request[v1.FetchMappedSplitBundleRequest]) (*connect.Response[v1.FetchMappedSplitBundleResponse], error)
 }
 
 // NewSnapshotServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -90,16 +112,24 @@ type SnapshotServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSnapshotServiceHandler(svc SnapshotServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	snapshotServiceMethods := v1.File_orange_config_v1_service_proto.Services().ByName("SnapshotService").Methods()
-	snapshotServiceFetchHandler := connect.NewUnaryHandler(
-		SnapshotServiceFetchProcedure,
-		svc.Fetch,
-		connect.WithSchema(snapshotServiceMethods.ByName("Fetch")),
+	snapshotServiceFetchMappedSplitMapHandler := connect.NewUnaryHandler(
+		SnapshotServiceFetchMappedSplitMapProcedure,
+		svc.FetchMappedSplitMap,
+		connect.WithSchema(snapshotServiceMethods.ByName("FetchMappedSplitMap")),
+		connect.WithHandlerOptions(opts...),
+	)
+	snapshotServiceFetchMappedSplitBundleHandler := connect.NewUnaryHandler(
+		SnapshotServiceFetchMappedSplitBundleProcedure,
+		svc.FetchMappedSplitBundle,
+		connect.WithSchema(snapshotServiceMethods.ByName("FetchMappedSplitBundle")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/orange.config.v1.SnapshotService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case SnapshotServiceFetchProcedure:
-			snapshotServiceFetchHandler.ServeHTTP(w, r)
+		case SnapshotServiceFetchMappedSplitMapProcedure:
+			snapshotServiceFetchMappedSplitMapHandler.ServeHTTP(w, r)
+		case SnapshotServiceFetchMappedSplitBundleProcedure:
+			snapshotServiceFetchMappedSplitBundleHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -109,6 +139,10 @@ func NewSnapshotServiceHandler(svc SnapshotServiceHandler, opts ...connect.Handl
 // UnimplementedSnapshotServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSnapshotServiceHandler struct{}
 
-func (UnimplementedSnapshotServiceHandler) Fetch(context.Context, *connect.Request[v1.FetchRequest]) (*connect.Response[v1.FetchResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("orange.config.v1.SnapshotService.Fetch is not implemented"))
+func (UnimplementedSnapshotServiceHandler) FetchMappedSplitMap(context.Context, *connect.Request[v1.FetchMappedSplitMapRequest]) (*connect.Response[v1.FetchMappedSplitMapResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("orange.config.v1.SnapshotService.FetchMappedSplitMap is not implemented"))
+}
+
+func (UnimplementedSnapshotServiceHandler) FetchMappedSplitBundle(context.Context, *connect.Request[v1.FetchMappedSplitBundleRequest]) (*connect.Response[v1.FetchMappedSplitBundleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("orange.config.v1.SnapshotService.FetchMappedSplitBundle is not implemented"))
 }

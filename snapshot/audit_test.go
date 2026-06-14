@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/dio/cherry"
-	"github.com/dio/orange/producer"
-	"github.com/dio/orange/snapshot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dio/orange/producer"
+	"github.com/dio/orange/snapshot"
 )
 
 // TestSecretRefNotInMetadata verifies that a secret-bearing ref in cherry.Input

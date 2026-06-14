@@ -4,12 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dio/orange/snapshot"
-	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	configv1 "github.com/dio/orange/api/orange/config/v1"
+	"github.com/dio/orange/snapshot"
 )
 
 func makePayload(lane string, scopes []string) *configv1.ConfigPayload {
@@ -86,9 +87,18 @@ func TestNew_LaneAndScopesCopied(t *testing.T) {
 	assert.Equal(t, "ws-1", snap.Payload.Metadata.Scopes[0], "snapshot Payload must be an independent clone of source")
 }
 
+func TestNew_BundleZstdDerivedFromPayloadWhenNil(t *testing.T) {
+	payload := makePayload("", nil)
+	snap, err := snapshot.New(1, payload, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, payload.Payload, snap.BundleZstd)
+}
+
 func TestNew_BundleZstdCopied(t *testing.T) {
-	orig := []byte("bundle-bytes")
-	snap, err := snapshot.New(1, makePayload("", nil), orig)
+	payload := makePayload("", nil)
+	orig := append([]byte(nil), payload.Payload...)
+	snap, err := snapshot.New(1, payload, orig)
 	require.NoError(t, err)
 
 	// Mutating the original slice must not change the snapshot's copy.
@@ -96,6 +106,11 @@ func TestNew_BundleZstdCopied(t *testing.T) {
 	copy(want, snap.BundleZstd)
 	orig[0] ^= 0xFF
 	assert.Equal(t, want, snap.BundleZstd)
+}
+
+func TestNew_BundleZstdMustMatchPayload(t *testing.T) {
+	_, err := snapshot.New(1, makePayload("", nil), []byte("different-bundle"))
+	require.Error(t, err)
 }
 
 func TestNew_ZeroVersionRejected(t *testing.T) {

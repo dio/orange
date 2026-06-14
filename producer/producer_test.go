@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
-	"github.com/dio/orange/producer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dio/orange/producer"
 )
 
 var fixedTime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -110,6 +111,19 @@ func TestBuildInvalidInput(t *testing.T) {
 
 	_, err := b.Build(context.Background(), sel, "", result)
 	require.Error(t, err)
+}
+
+func TestBuildCanceledContext(t *testing.T) {
+	b := producer.NewBuilder(producer.Options{Clock: fixedClock()})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Build(ctx,
+		producer.Selection{ScopeKind: "workspace", ScopeID: "ws-1"},
+		"default",
+		producer.BuildResult{Scopes: []string{"ws-1"}, Input: minimalInput()},
+	)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestBuildSecretRefsPassThrough(t *testing.T) {

@@ -326,6 +326,425 @@ func (x *SnapshotMetadata) GetPayloadSha256() []byte {
 	return nil
 }
 
+// MappedSplitSnapshot is the typed SoTW map for Cherry mapped-split delivery.
+// Component bundle bytes are still fetched as ConfigPayload snapshots through
+// SnapshotService.FetchMappedSplitBundle using the resource named by each
+// bundle ref.
+type MappedSplitSnapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint64                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"` // monotonically increasing map version
+	Checksum      []byte                 `protobuf:"bytes,2,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	Map           *MappedSplitMap        `protobuf:"bytes,3,opt,name=map,proto3" json:"map,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MappedSplitSnapshot) Reset() {
+	*x = MappedSplitSnapshot{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitSnapshot) ProtoMessage() {}
+
+func (x *MappedSplitSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitSnapshot.ProtoReflect.Descriptor instead.
+func (*MappedSplitSnapshot) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MappedSplitSnapshot) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *MappedSplitSnapshot) GetChecksum() []byte {
+	if x != nil {
+		return x.Checksum
+	}
+	return nil
+}
+
+func (x *MappedSplitSnapshot) GetMap() *MappedSplitMap {
+	if x != nil {
+		return x.Map
+	}
+	return nil
+}
+
+// MappedSplitMap describes every current component bundle for one authenticated
+// lane. It is SoTW: omitted component refs are removed from the active view.
+type MappedSplitMap struct {
+	state                   protoimpl.MessageState                     `protogen:"open.v1"`
+	FormatVersion           string                                     `protobuf:"bytes,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	ScopeKind               string                                     `protobuf:"bytes,2,opt,name=scope_kind,json=scopeKind,proto3" json:"scope_kind,omitempty"`
+	ScopeId                 string                                     `protobuf:"bytes,3,opt,name=scope_id,json=scopeId,proto3" json:"scope_id,omitempty"`
+	Scopes                  []string                                   `protobuf:"bytes,4,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	GenerationId            string                                     `protobuf:"bytes,5,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	MapRevision             uint64                                     `protobuf:"varint,6,opt,name=map_revision,json=mapRevision,proto3" json:"map_revision,omitempty"`
+	LlmDefaultPrincipalSlug string                                     `protobuf:"bytes,7,opt,name=llm_default_principal_slug,json=llmDefaultPrincipalSlug,proto3" json:"llm_default_principal_slug,omitempty"`
+	Partitioning            map[string]*MappedSplitPartitionSpec       `protobuf:"bytes,8,rep,name=partitioning,proto3" json:"partitioning,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Bundles                 map[string]*MappedSplitBundleRef           `protobuf:"bytes,9,rep,name=bundles,proto3" json:"bundles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	PartitionBundles        map[string]*MappedSplitPartitionBundleRefs `protobuf:"bytes,10,rep,name=partition_bundles,json=partitionBundles,proto3" json:"partition_bundles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *MappedSplitMap) Reset() {
+	*x = MappedSplitMap{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitMap) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitMap) ProtoMessage() {}
+
+func (x *MappedSplitMap) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitMap.ProtoReflect.Descriptor instead.
+func (*MappedSplitMap) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MappedSplitMap) GetFormatVersion() string {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return ""
+}
+
+func (x *MappedSplitMap) GetScopeKind() string {
+	if x != nil {
+		return x.ScopeKind
+	}
+	return ""
+}
+
+func (x *MappedSplitMap) GetScopeId() string {
+	if x != nil {
+		return x.ScopeId
+	}
+	return ""
+}
+
+func (x *MappedSplitMap) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *MappedSplitMap) GetGenerationId() string {
+	if x != nil {
+		return x.GenerationId
+	}
+	return ""
+}
+
+func (x *MappedSplitMap) GetMapRevision() uint64 {
+	if x != nil {
+		return x.MapRevision
+	}
+	return 0
+}
+
+func (x *MappedSplitMap) GetLlmDefaultPrincipalSlug() string {
+	if x != nil {
+		return x.LlmDefaultPrincipalSlug
+	}
+	return ""
+}
+
+func (x *MappedSplitMap) GetPartitioning() map[string]*MappedSplitPartitionSpec {
+	if x != nil {
+		return x.Partitioning
+	}
+	return nil
+}
+
+func (x *MappedSplitMap) GetBundles() map[string]*MappedSplitBundleRef {
+	if x != nil {
+		return x.Bundles
+	}
+	return nil
+}
+
+func (x *MappedSplitMap) GetPartitionBundles() map[string]*MappedSplitPartitionBundleRefs {
+	if x != nil {
+		return x.PartitionBundles
+	}
+	return nil
+}
+
+// MappedSplitPartitionSpec describes deterministic cohorting for a partitioned lane.
+type MappedSplitPartitionSpec struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Algorithm     string                 `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Partitions    uint32                 `protobuf:"varint,3,opt,name=partitions,proto3" json:"partitions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MappedSplitPartitionSpec) Reset() {
+	*x = MappedSplitPartitionSpec{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitPartitionSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitPartitionSpec) ProtoMessage() {}
+
+func (x *MappedSplitPartitionSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitPartitionSpec.ProtoReflect.Descriptor instead.
+func (*MappedSplitPartitionSpec) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *MappedSplitPartitionSpec) GetAlgorithm() string {
+	if x != nil {
+		return x.Algorithm
+	}
+	return ""
+}
+
+func (x *MappedSplitPartitionSpec) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *MappedSplitPartitionSpec) GetPartitions() uint32 {
+	if x != nil {
+		return x.Partitions
+	}
+	return 0
+}
+
+// MappedSplitBundleRef identifies one component bundle resource.
+type MappedSplitBundleRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Resource      string                 `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
+	Component     string                 `protobuf:"bytes,3,opt,name=component,proto3" json:"component,omitempty"`
+	Checksum      uint64                 `protobuf:"varint,4,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	Size          uint64                 `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MappedSplitBundleRef) Reset() {
+	*x = MappedSplitBundleRef{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitBundleRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitBundleRef) ProtoMessage() {}
+
+func (x *MappedSplitBundleRef) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitBundleRef.ProtoReflect.Descriptor instead.
+func (*MappedSplitBundleRef) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MappedSplitBundleRef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MappedSplitBundleRef) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *MappedSplitBundleRef) GetComponent() string {
+	if x != nil {
+		return x.Component
+	}
+	return ""
+}
+
+func (x *MappedSplitBundleRef) GetChecksum() uint64 {
+	if x != nil {
+		return x.Checksum
+	}
+	return 0
+}
+
+func (x *MappedSplitBundleRef) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+// MappedSplitPartitionBundleRef identifies one partitioned component bundle.
+type MappedSplitPartitionBundleRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Partition     uint32                 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
+	Ref           *MappedSplitBundleRef  `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MappedSplitPartitionBundleRef) Reset() {
+	*x = MappedSplitPartitionBundleRef{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitPartitionBundleRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitPartitionBundleRef) ProtoMessage() {}
+
+func (x *MappedSplitPartitionBundleRef) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitPartitionBundleRef.ProtoReflect.Descriptor instead.
+func (*MappedSplitPartitionBundleRef) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *MappedSplitPartitionBundleRef) GetPartition() uint32 {
+	if x != nil {
+		return x.Partition
+	}
+	return 0
+}
+
+func (x *MappedSplitPartitionBundleRef) GetRef() *MappedSplitBundleRef {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
+}
+
+// MappedSplitPartitionBundleRefs wraps repeated refs because proto maps cannot
+// use repeated fields as map values.
+type MappedSplitPartitionBundleRefs struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Refs          []*MappedSplitPartitionBundleRef `protobuf:"bytes,1,rep,name=refs,proto3" json:"refs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MappedSplitPartitionBundleRefs) Reset() {
+	*x = MappedSplitPartitionBundleRefs{}
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MappedSplitPartitionBundleRefs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MappedSplitPartitionBundleRefs) ProtoMessage() {}
+
+func (x *MappedSplitPartitionBundleRefs) ProtoReflect() protoreflect.Message {
+	mi := &file_orange_config_v1_snapshot_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MappedSplitPartitionBundleRefs.ProtoReflect.Descriptor instead.
+func (*MappedSplitPartitionBundleRefs) Descriptor() ([]byte, []int) {
+	return file_orange_config_v1_snapshot_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *MappedSplitPartitionBundleRefs) GetRefs() []*MappedSplitPartitionBundleRef {
+	if x != nil {
+		return x.Refs
+	}
+	return nil
+}
+
 var File_orange_config_v1_snapshot_proto protoreflect.FileDescriptor
 
 const file_orange_config_v1_snapshot_proto_rawDesc = "" +
@@ -357,7 +776,51 @@ const file_orange_config_v1_snapshot_proto_rawDesc = "" +
 	"\x06scopes\x18\a \x03(\tR\x06scopes\x12!\n" +
 	"\fpayload_size\x18\b \x01(\x04R\vpayloadSize\x12\xa5\x01\n" +
 	"\x0epayload_sha256\x18\t \x01(\fB~\xbaH{\xba\x01x\n" +
-	"\x13metadata_sha256_len\x12:payload_sha256 must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\rpayloadSha256B\xbc\x01\n" +
+	"\x13metadata_sha256_len\x12:payload_sha256 must be empty or exactly 32 bytes (SHA-256)\x1a%this.size() == 0 || this.size() == 32R\rpayloadSha256\"\xea\x01\n" +
+	"\x13MappedSplitSnapshot\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\x04R\aversion\x12\x84\x01\n" +
+	"\bchecksum\x18\x02 \x01(\fBh\xbaHe\xba\x01b\n" +
+	" mapped_split_checksum_sha256_len\x12+checksum must be exactly 32 bytes (SHA-256)\x1a\x11this.size() == 32R\bchecksum\x122\n" +
+	"\x03map\x18\x03 \x01(\v2 .orange.config.v1.MappedSplitMapR\x03map\"\xdc\x06\n" +
+	"\x0eMappedSplitMap\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\tR\rformatVersion\x12\x1d\n" +
+	"\n" +
+	"scope_kind\x18\x02 \x01(\tR\tscopeKind\x12\x19\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeId\x12\x16\n" +
+	"\x06scopes\x18\x04 \x03(\tR\x06scopes\x12#\n" +
+	"\rgeneration_id\x18\x05 \x01(\tR\fgenerationId\x12!\n" +
+	"\fmap_revision\x18\x06 \x01(\x04R\vmapRevision\x12;\n" +
+	"\x1allm_default_principal_slug\x18\a \x01(\tR\x17llmDefaultPrincipalSlug\x12V\n" +
+	"\fpartitioning\x18\b \x03(\v22.orange.config.v1.MappedSplitMap.PartitioningEntryR\fpartitioning\x12G\n" +
+	"\abundles\x18\t \x03(\v2-.orange.config.v1.MappedSplitMap.BundlesEntryR\abundles\x12c\n" +
+	"\x11partition_bundles\x18\n" +
+	" \x03(\v26.orange.config.v1.MappedSplitMap.PartitionBundlesEntryR\x10partitionBundles\x1ak\n" +
+	"\x11PartitioningEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12@\n" +
+	"\x05value\x18\x02 \x01(\v2*.orange.config.v1.MappedSplitPartitionSpecR\x05value:\x028\x01\x1ab\n" +
+	"\fBundlesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12<\n" +
+	"\x05value\x18\x02 \x01(\v2&.orange.config.v1.MappedSplitBundleRefR\x05value:\x028\x01\x1au\n" +
+	"\x15PartitionBundlesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12F\n" +
+	"\x05value\x18\x02 \x01(\v20.orange.config.v1.MappedSplitPartitionBundleRefsR\x05value:\x028\x01\"j\n" +
+	"\x18MappedSplitPartitionSpec\x12\x1c\n" +
+	"\talgorithm\x18\x01 \x01(\tR\talgorithm\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1e\n" +
+	"\n" +
+	"partitions\x18\x03 \x01(\rR\n" +
+	"partitions\"\x90\x01\n" +
+	"\x14MappedSplitBundleRef\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bresource\x18\x02 \x01(\tR\bresource\x12\x1c\n" +
+	"\tcomponent\x18\x03 \x01(\tR\tcomponent\x12\x1a\n" +
+	"\bchecksum\x18\x04 \x01(\x04R\bchecksum\x12\x12\n" +
+	"\x04size\x18\x05 \x01(\x04R\x04size\"w\n" +
+	"\x1dMappedSplitPartitionBundleRef\x12\x1c\n" +
+	"\tpartition\x18\x01 \x01(\rR\tpartition\x128\n" +
+	"\x03ref\x18\x02 \x01(\v2&.orange.config.v1.MappedSplitBundleRefR\x03ref\"e\n" +
+	"\x1eMappedSplitPartitionBundleRefs\x12C\n" +
+	"\x04refs\x18\x01 \x03(\v2/.orange.config.v1.MappedSplitPartitionBundleRefR\x04refsB\xbc\x01\n" +
 	"\x14com.orange.config.v1B\rSnapshotProtoP\x01Z3github.com/dio/orange/api/orange/config/v1;configv1\xa2\x02\x03OCX\xaa\x02\x10Orange.Config.V1\xca\x02\x10Orange\\Config\\V1\xe2\x02\x1cOrange\\Config\\V1\\GPBMetadata\xea\x02\x12Orange::Config::V1b\x06proto3"
 
 var (
@@ -372,23 +835,41 @@ func file_orange_config_v1_snapshot_proto_rawDescGZIP() []byte {
 	return file_orange_config_v1_snapshot_proto_rawDescData
 }
 
-var file_orange_config_v1_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_orange_config_v1_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_orange_config_v1_snapshot_proto_goTypes = []any{
-	(*SnapshotEnvelope)(nil),      // 0: orange.config.v1.SnapshotEnvelope
-	(*ConfigPayload)(nil),         // 1: orange.config.v1.ConfigPayload
-	(*PayloadFormat)(nil),         // 2: orange.config.v1.PayloadFormat
-	(*SnapshotMetadata)(nil),      // 3: orange.config.v1.SnapshotMetadata
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(*SnapshotEnvelope)(nil),               // 0: orange.config.v1.SnapshotEnvelope
+	(*ConfigPayload)(nil),                  // 1: orange.config.v1.ConfigPayload
+	(*PayloadFormat)(nil),                  // 2: orange.config.v1.PayloadFormat
+	(*SnapshotMetadata)(nil),               // 3: orange.config.v1.SnapshotMetadata
+	(*MappedSplitSnapshot)(nil),            // 4: orange.config.v1.MappedSplitSnapshot
+	(*MappedSplitMap)(nil),                 // 5: orange.config.v1.MappedSplitMap
+	(*MappedSplitPartitionSpec)(nil),       // 6: orange.config.v1.MappedSplitPartitionSpec
+	(*MappedSplitBundleRef)(nil),           // 7: orange.config.v1.MappedSplitBundleRef
+	(*MappedSplitPartitionBundleRef)(nil),  // 8: orange.config.v1.MappedSplitPartitionBundleRef
+	(*MappedSplitPartitionBundleRefs)(nil), // 9: orange.config.v1.MappedSplitPartitionBundleRefs
+	nil,                                    // 10: orange.config.v1.MappedSplitMap.PartitioningEntry
+	nil,                                    // 11: orange.config.v1.MappedSplitMap.BundlesEntry
+	nil,                                    // 12: orange.config.v1.MappedSplitMap.PartitionBundlesEntry
+	(*timestamppb.Timestamp)(nil),          // 13: google.protobuf.Timestamp
 }
 var file_orange_config_v1_snapshot_proto_depIdxs = []int32{
-	2, // 0: orange.config.v1.ConfigPayload.format:type_name -> orange.config.v1.PayloadFormat
-	3, // 1: orange.config.v1.ConfigPayload.metadata:type_name -> orange.config.v1.SnapshotMetadata
-	4, // 2: orange.config.v1.SnapshotMetadata.created_at:type_name -> google.protobuf.Timestamp
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2,  // 0: orange.config.v1.ConfigPayload.format:type_name -> orange.config.v1.PayloadFormat
+	3,  // 1: orange.config.v1.ConfigPayload.metadata:type_name -> orange.config.v1.SnapshotMetadata
+	13, // 2: orange.config.v1.SnapshotMetadata.created_at:type_name -> google.protobuf.Timestamp
+	5,  // 3: orange.config.v1.MappedSplitSnapshot.map:type_name -> orange.config.v1.MappedSplitMap
+	10, // 4: orange.config.v1.MappedSplitMap.partitioning:type_name -> orange.config.v1.MappedSplitMap.PartitioningEntry
+	11, // 5: orange.config.v1.MappedSplitMap.bundles:type_name -> orange.config.v1.MappedSplitMap.BundlesEntry
+	12, // 6: orange.config.v1.MappedSplitMap.partition_bundles:type_name -> orange.config.v1.MappedSplitMap.PartitionBundlesEntry
+	7,  // 7: orange.config.v1.MappedSplitPartitionBundleRef.ref:type_name -> orange.config.v1.MappedSplitBundleRef
+	8,  // 8: orange.config.v1.MappedSplitPartitionBundleRefs.refs:type_name -> orange.config.v1.MappedSplitPartitionBundleRef
+	6,  // 9: orange.config.v1.MappedSplitMap.PartitioningEntry.value:type_name -> orange.config.v1.MappedSplitPartitionSpec
+	7,  // 10: orange.config.v1.MappedSplitMap.BundlesEntry.value:type_name -> orange.config.v1.MappedSplitBundleRef
+	9,  // 11: orange.config.v1.MappedSplitMap.PartitionBundlesEntry.value:type_name -> orange.config.v1.MappedSplitPartitionBundleRefs
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_orange_config_v1_snapshot_proto_init() }
@@ -402,7 +883,7 @@ func file_orange_config_v1_snapshot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orange_config_v1_snapshot_proto_rawDesc), len(file_orange_config_v1_snapshot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

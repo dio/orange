@@ -46,3 +46,60 @@ message SnapshotMetadata {
     expression: "this.size() == 0 || this.size() == 32"
   }];
 }
+
+// MappedSplitSnapshot is the typed SoTW map for Cherry mapped-split delivery.
+// Component bundle bytes are still fetched as ConfigPayload snapshots through
+// SnapshotService.FetchMappedSplitBundle using the resource named by each
+// bundle ref.
+message MappedSplitSnapshot {
+  uint64 version = 1; // monotonically increasing map version
+  bytes checksum = 2 [(buf.validate.field).cel = {
+    id: "mapped_split_checksum_sha256_len"
+    message: "checksum must be exactly 32 bytes (SHA-256)"
+    expression: "this.size() == 32"
+  }];
+  MappedSplitMap map = 3;
+}
+
+// MappedSplitMap describes every current component bundle for one authenticated
+// lane. It is SoTW: omitted component refs are removed from the active view.
+message MappedSplitMap {
+  string format_version = 1;
+  string scope_kind = 2;
+  string scope_id = 3;
+  repeated string scopes = 4;
+  string generation_id = 5;
+  uint64 map_revision = 6;
+  string llm_default_principal_slug = 7;
+  map<string, MappedSplitPartitionSpec> partitioning = 8;
+  map<string, MappedSplitBundleRef> bundles = 9;
+  map<string, MappedSplitPartitionBundleRefs> partition_bundles = 10;
+}
+
+// MappedSplitPartitionSpec describes deterministic cohorting for a partitioned lane.
+message MappedSplitPartitionSpec {
+  string algorithm = 1;
+  string key = 2;
+  uint32 partitions = 3;
+}
+
+// MappedSplitBundleRef identifies one component bundle resource.
+message MappedSplitBundleRef {
+  string id = 1;
+  string resource = 2;
+  string component = 3;
+  uint64 checksum = 4;
+  uint64 size = 5;
+}
+
+// MappedSplitPartitionBundleRef identifies one partitioned component bundle.
+message MappedSplitPartitionBundleRef {
+  uint32 partition = 1;
+  MappedSplitBundleRef ref = 2;
+}
+
+// MappedSplitPartitionBundleRefs wraps repeated refs because proto maps cannot
+// use repeated fields as map values.
+message MappedSplitPartitionBundleRefs {
+  repeated MappedSplitPartitionBundleRef refs = 1;
+}

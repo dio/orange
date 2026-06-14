@@ -7,42 +7,73 @@ import "orange/auth/v1/auth_options.proto";
 import "orange/config/v1/snapshot.proto";
 
 service SnapshotService {
-  // Fetch is the unary cold-start or reconnect path.
-  // When last_version and last_checksum both still match the current snapshot,
-  // the server returns Unchanged. Otherwise it returns the current envelope.
-  rpc Fetch(FetchRequest) returns (FetchResponse) {
+  // FetchMappedSplitMap returns the typed mapped-split SoTW map for the
+  // authenticated lane. Component bundles referenced by the map are fetched
+  // separately through FetchMappedSplitBundle.
+  rpc FetchMappedSplitMap(FetchMappedSplitMapRequest) returns (FetchMappedSplitMapResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [AUTH_TYPE_CLIENT_ASSERTION]
+    };
+  }
+
+  // FetchMappedSplitBundle returns one component bundle resource referenced by
+  // the typed mapped-split map for the authenticated lane.
+  rpc FetchMappedSplitBundle(FetchMappedSplitBundleRequest) returns (FetchMappedSplitBundleResponse) {
     option (orange.auth.v1.auth) = {
       auth_types: [AUTH_TYPE_CLIENT_ASSERTION]
     };
   }
 }
 
-// FetchRequest is the unary cold-start or reconnect path. When both
-// last_version and last_checksum still match the server's current snapshot,
-// the server replies with Unchanged. Send last_version = 0 and omit
-// last_checksum for an unconditional fetch.
-message FetchRequest {
-  // last_version is the highest version the client has applied; 0 = unconditional.
-  uint64 last_version = 2;
+// Unchanged is returned when the client's version/checksum state is already current.
+message Unchanged {}
 
-  // last_checksum is the SHA-256 of the last accepted decompressed payload.
-  // When present it must be exactly 32 bytes. Omit (leave empty) for an
-  // unconditional fetch or when last_version alone is sufficient.
-  bytes last_checksum = 3 [(buf.validate.field).cel = {
-    id: "fetch_checksum_sha256_len"
+// FetchMappedSplitMapRequest is the typed mapped-split map polling request.
+message FetchMappedSplitMapRequest {
+  // last_version is the highest typed map version the client has applied; 0 =
+  // unconditional.
+  uint64 last_version = 1;
+
+  // last_checksum is the SHA-256 of the last accepted typed map proto bytes.
+  bytes last_checksum = 2 [(buf.validate.field).cel = {
+    id: "fetch_mapped_split_checksum_sha256_len"
     message: "last_checksum must be empty or exactly 32 bytes (SHA-256)"
     expression: "this.size() == 0 || this.size() == 32"
   }];
 }
 
-message FetchResponse {
+message FetchMappedSplitMapResponse {
   oneof result {
     option (buf.validate.oneof).required = true;
 
-    SnapshotEnvelope snapshot = 1; // current snapshot (version or checksum changed)
-    Unchanged unchanged = 2; // version and checksum still match; no payload
+    MappedSplitSnapshot snapshot = 1; // current typed map
+    Unchanged unchanged = 2; // version and checksum still match; no map body
   }
 }
 
-// Unchanged is returned by Fetch when the client's snapshot is already current.
-message Unchanged {}
+// FetchMappedSplitBundleRequest fetches one component bundle resource from the
+// authenticated lane. The resource value must come from the current typed map.
+message FetchMappedSplitBundleRequest {
+  string resource = 1 [(buf.validate.field).string.min_len = 1];
+
+  // last_version is the highest component snapshot version the client has
+  // applied for this resource; 0 = unconditional.
+  uint64 last_version = 2;
+
+  // last_checksum is the SHA-256 of the last accepted decompressed ConfigPayload
+  // proto bytes for this resource.
+  bytes last_checksum = 3 [(buf.validate.field).cel = {
+    id: "fetch_mapped_split_bundle_checksum_sha256_len"
+    message: "last_checksum must be empty or exactly 32 bytes (SHA-256)"
+    expression: "this.size() == 0 || this.size() == 32"
+  }];
+}
+
+message FetchMappedSplitBundleResponse {
+  oneof result {
+    option (buf.validate.oneof).required = true;
+
+    SnapshotEnvelope snapshot = 1; // current component bundle snapshot
+    Unchanged unchanged = 2; // version and checksum still match; no payload
+  }
+}

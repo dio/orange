@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
-	"github.com/dio/orange/producer"
-	"github.com/dio/orange/snapshot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dio/orange/producer"
+	"github.com/dio/orange/snapshot"
 )
 
 // testBuilder returns a producer.Builder with a fixed clock.
@@ -175,6 +176,12 @@ func TestNoCallbackFails(t *testing.T) {
 	require.ErrorIs(t, err, snapshot.ErrNoCallback)
 }
 
+func TestNoBuilderFails(t *testing.T) {
+	mgr := snapshot.NewManager(nil, successCallback("default"))
+	_, err := mgr.Publish(context.Background(), snapshot.MutationRequest{Selection: defaultSel(), Lane: "default"})
+	require.ErrorIs(t, err, snapshot.ErrNoBuilder)
+}
+
 // TestMultipleLanesIsolated verifies that publishes to different lanes do not
 // cross-contaminate each other.
 func TestMultipleLanesIsolated(t *testing.T) {
@@ -209,7 +216,6 @@ func TestMultiLaneLaneMetadataCorrect(t *testing.T) {
 	mgr := snapshot.NewManager(testBuilder(), successCallback("any"))
 
 	for _, lane := range []string{"lane-a", "lane-b"} {
-		lane := lane
 		_, err := mgr.Publish(context.Background(), snapshot.MutationRequest{
 			Selection: defaultSel(),
 			Lane:      lane,
@@ -229,6 +235,32 @@ func TestMultiLaneLaneMetadataCorrect(t *testing.T) {
 	assert.NotEqual(t, snapA.Version, snapB.Version)
 	assert.Equal(t, "lane-a", snapA.Lane)
 	assert.Equal(t, "lane-b", snapB.Lane)
+}
+
+func TestLaneResourceKeysDoNotCollide(t *testing.T) {
+	mgr := snapshot.NewManager(testBuilder(), successCallback("any"))
+
+	first, err := mgr.Publish(context.Background(), snapshot.MutationRequest{
+		Selection: defaultSel(),
+		Lane:      "lane",
+		Resource:  "resource\x00x",
+	})
+	require.NoError(t, err)
+
+	second, err := mgr.Publish(context.Background(), snapshot.MutationRequest{
+		Selection: defaultSel(),
+		Lane:      "lane\x00resource",
+		Resource:  "x",
+	})
+	require.NoError(t, err)
+
+	gotFirst := mgr.CurrentResource("lane", "resource\x00x")
+	gotSecond := mgr.CurrentResource("lane\x00resource", "x")
+	require.NotNil(t, gotFirst)
+	require.NotNil(t, gotSecond)
+	assert.Equal(t, first.Version, gotFirst.Version)
+	assert.Equal(t, second.Version, gotSecond.Version)
+	assert.NotEqual(t, gotFirst.Version, gotSecond.Version)
 }
 
 // TestPublishReturnIsolated verifies that mutating the *Snapshot returned by

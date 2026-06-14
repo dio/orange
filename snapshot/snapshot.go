@@ -5,11 +5,13 @@
 package snapshot
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 
-	configv1 "github.com/dio/orange/api/orange/config/v1"
 	"google.golang.org/protobuf/proto"
+
+	configv1 "github.com/dio/orange/api/orange/config/v1"
 )
 
 // Snapshot is an immutable, fully assembled snapshot ready for publication and
@@ -32,8 +34,8 @@ type Snapshot struct {
 }
 
 // New marshals payload into a SnapshotEnvelope and assembles an immutable
-// Snapshot. bundleZstd must be the cherry bundle bytes already stored inside
-// payload.payload; it is copied and retained for direct-access callers.
+// Snapshot. bundleZstd must be nil or the cherry bundle bytes already stored
+// inside payload.payload; it is copied and retained for direct-access callers.
 //
 // version must be > 0; callers own version sequencing.
 func New(version uint64, payload *configv1.ConfigPayload, bundleZstd []byte) (*Snapshot, error) {
@@ -54,6 +56,14 @@ func New(version uint64, payload *configv1.ConfigPayload, bundleZstd []byte) (*S
 	}
 
 	checksum := sha256.Sum256(raw)
+
+	if bundleZstd != nil && !bytes.Equal(bundleZstd, ownedPayload.Payload) {
+		return nil, fmt.Errorf("bundle bytes do not match payload bytes")
+	}
+
+	if bundleZstd == nil {
+		bundleZstd = ownedPayload.Payload
+	}
 
 	// Defensive copies of all byte slices.
 	rawCopy := make([]byte, len(raw))
