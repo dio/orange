@@ -323,10 +323,29 @@ func TestPgStoreBuildLeaseAllowsOneHolderPerLane(t *testing.T) {
 	pool := testpg.Pool(t)
 	require.NoError(t, migration.Migrate(ctx, pool, migration.WithSchema(schema)))
 
-	const contenders = 8
-	entered := make(chan struct{}, contenders)
+	holder, err := NewPgStore(
+		pool,
+		WithPgStoreSchema(schema),
+		WithPgStoreBuildLeaseHolderID("holder-active"),
+		WithPgStoreBuildLeaseDuration(time.Second),
+		WithPgStoreBuildHeartbeatInterval(50*time.Millisecond),
+	)
+	require.NoError(t, err)
+
+	entered := make(chan struct{})
 	release := make(chan struct{})
-	var callbacks atomic.Int64
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- holder.WithMappedSplitBuildLease(ctx, "lane-a", func(context.Context, BuildLease) error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+
+	const contenders = 7
+	var unexpectedCallbacks atomic.Int64
 	var wg sync.WaitGroup
 	wg.Add(contenders)
 	for i := range contenders {
@@ -340,23 +359,17 @@ func TestPgStoreBuildLeaseAllowsOneHolderPerLane(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			err := store.WithMappedSplitBuildLease(ctx, "lane-a", func(context.Context, BuildLease) error {
-				callbacks.Add(1)
-				entered <- struct{}{}
-				<-release
+				unexpectedCallbacks.Add(1)
 				return nil
 			})
-			if err != nil {
-				assert.ErrorIs(t, err, ErrBuildLeaseHeld)
-			}
+			assert.ErrorIs(t, err, ErrBuildLeaseHeld)
 		}()
 	}
-
-	require.Eventually(t, func() bool {
-		return callbacks.Load() == 1
-	}, time.Second, 10*time.Millisecond)
-	close(release)
 	wg.Wait()
-	require.Len(t, entered, 1)
+	require.Equal(t, int64(0), unexpectedCallbacks.Load())
+
+	close(release)
+	require.NoError(t, <-holderDone)
 }
 
 func TestPgStoreBuildLeaseAllowsDifferentLanesConcurrently(t *testing.T) {
@@ -403,6 +416,40 @@ func TestPgStoreBuildLeaseAllowsDifferentLanesConcurrently(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	close(release)
 	wg.Wait()
+}
+
+func TestPgStoreBuildLeaseExpiryFencesHolderWithoutTakeover(t *testing.T) {
+	ctx := context.Background()
+	schema := testPgSchema(t)
+	pool := testpg.Pool(t)
+	require.NoError(t, migration.Migrate(ctx, pool, migration.WithSchema(schema)))
+	store := newTestPgStoreWithOptions(t,
+		WithPgStoreSchema(schema),
+		WithPgStoreBuildLeaseHolderID("holder-a"),
+		WithPgStoreBuildLeaseDuration(40*time.Millisecond),
+		WithPgStoreBuildHeartbeatInterval(time.Second),
+	)
+	require.NoError(t, store.MarkMappedSplitDirty(ctx, BuildRequest{Lane: "lane-a", RequestedBy: "test"}))
+
+	err := store.WithMappedSplitBuildLease(ctx, "lane-a", func(ctx context.Context, lease BuildLease) error {
+		time.Sleep(time.Until(lease.LockedUntil.Add(30 * time.Millisecond)))
+
+		out := testBuildOutput(t, ctx, "lane-a", 1)
+		_, err := store.PublishMappedSplitWithLease(ctx, lease, out)
+		require.ErrorIs(t, err, ErrBuildLeaseLost)
+
+		err = store.ClearMappedSplitDirty(ctx, lease, 0)
+		require.ErrorIs(t, err, ErrBuildLeaseLost)
+		return nil
+	})
+	require.NoError(t, err)
+
+	_, unchanged, err := store.FetchMappedSplitMap(ctx, "lane-a", 0, nil)
+	require.ErrorIs(t, err, snapshot.ErrNoSnapshot)
+	require.False(t, unchanged)
+	req, err := store.GetMappedSplitBuildRequest(ctx, "lane-a")
+	require.NoError(t, err)
+	require.NotNil(t, req)
 }
 
 func TestPgStoreBuildLeaseTakeoverFencesStaleHolder(t *testing.T) {

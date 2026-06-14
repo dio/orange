@@ -611,6 +611,7 @@ func assertPgBuildLease(ctx context.Context, tx pgx.Tx, lease BuildLease) error 
 			WHERE lane = $1
 			  AND holder_id = $2
 			  AND lease_version = $3
+			  AND locked_until > now()
 		)
 	`, lease.Lane, lease.HolderID, lease.LeaseVersion).Scan(&exists); err != nil {
 		return fmt.Errorf("assert mapped split build lease lane %q: %w", lease.Lane, err)

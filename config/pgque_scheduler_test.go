@@ -171,6 +171,45 @@ func TestPgQueSchedulerTwoWorkersRaceOneLane(t *testing.T) {
 	require.Equal(t, int64(1), builds.Load())
 }
 
+func TestPgQueSchedulerLeaseHeldIsNoOp(t *testing.T) {
+	ctx := context.Background()
+	pool, storeA := freshPgQueSchedulerStore(t, "holder-a")
+	storeB, err := NewPgStore(
+		pool,
+		WithPgStoreBuildLeaseHolderID("holder-b"),
+		WithPgStoreBuildLeaseDuration(time.Second),
+		WithPgStoreBuildHeartbeatInterval(20*time.Millisecond),
+	)
+	require.NoError(t, err)
+	schedulerB := newTestPgQueScheduler(t, storeB, func(_ context.Context, req BuildRequest) (MappedSplitRequest, error) {
+		return testMappedSplitRequest(req.Lane, 1), nil
+	})
+	require.NoError(t, storeA.MarkMappedSplitDirty(ctx, BuildRequest{Lane: "lane-a"}))
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- storeA.WithMappedSplitBuildLease(ctx, "lane-a", func(context.Context, BuildLease) error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+
+	err = schedulerB.processMessage(ctx, pgQueMessage{
+		Type:    PgQueMappedSplitBuildEventType,
+		Payload: `{"lane":"lane-a"}`,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), pgQueSchedulerCurrentRevision(t, storeB, "lane-a"))
+	require.NotNil(t, pgQueSchedulerDirtyRequest(t, storeB, "lane-a"))
+
+	close(release)
+	require.NoError(t, <-done)
+}
+
 func TestPgQueSchedulerBuildsDifferentLanesIndependently(t *testing.T) {
 	ctx := context.Background()
 	_, store := freshPgQueSchedulerStore(t, "holder-a")

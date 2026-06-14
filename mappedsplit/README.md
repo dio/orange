@@ -64,6 +64,79 @@ For LLM per-key routes, the partition is
 is `fnv1a64(path_suffix) % partitions`. Consumers should use
 `cherry.MappedSplitSpec` to compute this instead of copying hash math.
 
+## Durable Postgres Store
+
+Multi-replica embedders should apply Orange's store migrations explicitly,
+construct `config.PgStore`, and inject it into `config.Server`. Orange still
+does not own the HTTP process; the embedder mounts the generated
+`SnapshotService` handler on its own mux.
+
+```go
+pool, err := pgxpool.New(ctx, dsn)
+if err != nil {
+	return err
+}
+defer pool.Close()
+
+if err := migration.Migrate(ctx, pool); err != nil {
+	return err
+}
+
+store, err := config.NewPgStore(
+	pool,
+	config.WithPgStoreBuildLeaseHolderID(replicaID),
+)
+if err != nil {
+	return err
+}
+
+snapshotServer := config.NewServer(config.ServerOptions{
+	Producer:      "control-plane/1.2.3",
+	Authenticator: auth,
+	LaneResolver:  lanes,
+	Store:         store,
+	OnDemandBuild: buildMissingLane,
+})
+
+mux := http.NewServeMux()
+snapshotServer.Mount(mux)
+mux.HandleFunc("/healthz", healthz)
+```
+
+Use `migration.WithSchema("orange")` and `config.WithPgStoreSchema("orange")`
+when the store tables live outside the default search path. `PgStore` stores
+current typed maps, immutable component resources, dirty build requests, and
+per-lane build leases in Postgres, so any replica can publish or serve fetches.
+Matching `last_version` and `last_checksum` values return `Unchanged` for both
+map and bundle fetches.
+
+Optional PgQue scheduling is a signal layer over the same store state:
+
+```go
+if err := pgque.Setup(ctx, pool, pgque.WithConsumer("orange_builder")); err != nil {
+	return err
+}
+
+scheduler, err := config.NewPgQueScheduler(store, buildDirtyLane)
+if err != nil {
+	return err
+}
+
+if err := scheduler.ScheduleBuild(ctx, config.BuildRequest{
+	Lane:           lane,
+	RequestedBy:    replicaID,
+	SourceRevision: sourceRevision,
+	ChangeHint:     "catalog update",
+}); err != nil {
+	return err
+}
+```
+
+Each worker replica may run `scheduler.Run(ctx)` from embedder-owned process
+supervision. PgQue carries duplicate-tolerant wake-up events only; `PgStore`
+remains authoritative for dirty rows, leases, current maps, map revisions, and
+component resources.
+
 ## Consumer Shape
 
 The enforcement point always fetches the authenticated lane's typed map first.

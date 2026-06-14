@@ -217,6 +217,19 @@ workers. Queue systems such as PgQue should only signal that a build may be
 needed; they must not own current pointers, map revisions, component resources,
 or dirty flags.
 
+The implemented durable path is:
+
+- `config/postgres/migration.Migrate` applies explicit, idempotent store
+  migrations.
+- `config.NewPgStore` constructs a `pgxpool`-backed `Store` and
+  `BuildCoordinator`.
+- `config.ServerOptions.Store` injects that store into embedders' own mounted
+  `SnapshotService` handlers.
+- `config/pgque.Setup` installs the optional PgQue signal layer separately from
+  store migrations.
+- `config.NewPgQueScheduler` marks lanes dirty, sends PgQue events, and runs
+  worker builds under the same store lease used by cold-start fetches.
+
 See `docs/design/mapped-split-store-scheduler.md` for the store-first design,
 migration split, worker lease contract, and PgQue integration shape.
 

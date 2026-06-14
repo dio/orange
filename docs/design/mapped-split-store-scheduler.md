@@ -131,24 +131,27 @@ correct with N replicas and N worker loops from day one.
 
 ## Postgres Store
 
-The first production store should be a `pgxpool`-backed implementation:
+The production durable store is the `pgxpool`-backed `config.PgStore`:
 
 ```go
 type PgStore struct {
-	pool   *pgxpool.Pool
-	schema string
+	pool *pgxpool.Pool
+	// configured through PgStoreOption values
 }
 ```
 
-It should implement `config.Store` plus the optional build-coordination
-interface. Construction should not run DDL:
+It implements `config.Store` plus the optional `config.BuildCoordinator`
+interface. Construction does not run DDL:
 
 ```go
 func NewPgStore(pool *pgxpool.Pool, opts ...PgStoreOption) (*PgStore, error)
 ```
 
-Callers must apply migrations before constructing the store. This keeps startup
-policy explicit for embedders and avoids hidden DDL on request-serving paths.
+Callers apply `config/postgres/migration.Migrate` before constructing the
+store. This keeps startup policy explicit for embedders and avoids hidden DDL on
+request-serving paths. `WithPgStoreSchema`, `WithPgStoreBuildLeaseHolderID`,
+`WithPgStoreBuildLeaseDuration`, and `WithPgStoreBuildHeartbeatInterval`
+configure schema selection and replica lease identity.
 
 Use explicit `pgx` queries and transactions. Avoid ORMs. Every operation should
 accept `context.Context`, use parameterized SQL, and return domain errors for
@@ -331,24 +334,23 @@ marks a lane dirty and sends a queue event in one transaction.
 For multi-instance deployments, queue creation and subscription should be
 idempotent at startup. Multiple replicas may execute startup concurrently.
 
-Migration package shape should follow the other Orange checkout:
+Store migrations are embedded in:
 
 ```text
 config/postgres/migration
   migration.go
-  sql/postgres/000001_foundation.sql
-  sql/postgres/000002_...
+  sql/postgres/000001_mapped_split_store.sql
 ```
 
-`migration.go` should embed SQL files, track applied migrations in an
-Orange-owned schema migration table, support an optional schema/search path, and
-use an advisory migration lock. Store constructors should validate options and
+`migration.Migrate` embeds SQL files, tracks applied migrations in an
+Orange-owned schema migration table, supports an optional schema/search path,
+and uses an advisory migration lock. Store constructors validate options and
 assume migrations already ran.
 
 PgQue installation remains separate:
 
 ```text
-internal/pgque or config/pgque
+config/pgque
   installs/upgrades PgQue schema/functions
   creates queue and subscription
   does not create Orange store tables
@@ -367,7 +369,7 @@ The two DDL tracks must be independently runnable:
 
 ## Embedded Postgres
 
-Add an `internal/embeddedpg` package based on the other Orange checkout:
+Integration tests use `internal/embeddedpg`:
 
 ```text
 internal/embeddedpg
@@ -375,7 +377,7 @@ internal/embeddedpg
   testpg/testpg.go
 ```
 
-The helper should:
+The helper:
 
 - wrap `github.com/fergusstrange/embedded-postgres`
 - default to user `orange`, password `orange`, database `orange`
@@ -386,12 +388,12 @@ The helper should:
   temp root per test binary
 - provide `testpg.Cleanup()` for `TestMain`
 
-Use embeddedpg for integration tests of the Postgres store and the future PgQue
-adapter. Unit tests that do not need Postgres should stay in-memory.
+Use embeddedpg for integration tests of the Postgres store and PgQue adapter.
+Unit tests that do not need Postgres should stay in-memory.
 
 ## PgQue Shape
 
-PgQue should carry build signals:
+PgQue carries build signals through `config.PgQueScheduler`:
 
 ```text
 ScheduleBuild
@@ -446,12 +448,3 @@ PgQue integration tests:
 - different lanes can build independently
 - multiple replicas can run scheduler startup idempotently
 - one replica can take over after another replica's build lease expires
-
-The next implementation step should be:
-
-1. Copy/adapt `internal/embeddedpg` and `internal/embeddedpg/testpg`.
-2. Add Postgres store migrations.
-3. Implement `config.PgStore`.
-4. Add embeddedpg-backed store tests.
-5. Add PgQue migration/worker wiring only after the Postgres store contract is
-   proven.

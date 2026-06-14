@@ -200,6 +200,9 @@ func (s *PgQueScheduler) ProcessOnce(ctx context.Context) (int, error) {
 	}
 	for _, msg := range msgs {
 		if err := s.processMessage(ctx, msg); err != nil {
+			if errors.Is(err, ErrBuildLeaseHeld) {
+				continue
+			}
 			if nackErr := s.nack(ctx, msg, err); nackErr != nil {
 				return 0, errors.Join(err, nackErr)
 			}
@@ -255,7 +258,7 @@ func (s *PgQueScheduler) processMessage(ctx context.Context, msg pgQueMessage) e
 	if payload.Lane == "" {
 		return fmt.Errorf("pgque scheduler: build payload lane is required")
 	}
-	return s.store.WithMappedSplitBuildLease(ctx, payload.Lane, func(ctx context.Context, lease BuildLease) error {
+	if err := s.store.WithMappedSplitBuildLease(ctx, payload.Lane, func(ctx context.Context, lease BuildLease) error {
 		req, err := s.store.GetMappedSplitBuildRequest(ctx, payload.Lane)
 		if err != nil {
 			return err
@@ -291,7 +294,13 @@ func (s *PgQueScheduler) processMessage(ctx context.Context, msg pgQueMessage) e
 			return s.afterClearDirtyHook(ctx, lease, result)
 		}
 		return nil
-	})
+	}); err != nil {
+		if errors.Is(err, ErrBuildLeaseHeld) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *PgQueScheduler) ack(ctx context.Context, batchID int64) error {
