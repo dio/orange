@@ -257,6 +257,28 @@ type yamlModel struct {
 	MetadataJSON string   `yaml:"metadata_json"`
 }
 
+func (m yamlModel) toConfig() config.Model {
+	return config.Model{
+		ID:           m.ID,
+		Provider:     m.Provider,
+		Name:         m.Name,
+		Mode:         m.Mode,
+		Capabilities: append([]string(nil), m.Capabilities...),
+		MetadataJSON: m.MetadataJSON,
+	}
+}
+
+func fromConfigModel(m config.Model) yamlModel {
+	return yamlModel{
+		ID:           m.ID,
+		Provider:     m.Provider,
+		Name:         m.Name,
+		Mode:         m.Mode,
+		Capabilities: append([]string(nil), m.Capabilities...),
+		MetadataJSON: m.MetadataJSON,
+	}
+}
+
 type yamlRoutePlan struct {
 	Kind      string                  `yaml:"kind"`
 	Provider  string                  `yaml:"provider"`
@@ -327,7 +349,7 @@ func (in yamlInput) toConfig() config.Input {
 		out.Providers = append(out.Providers, config.Provider(provider))
 	}
 	for _, model := range in.Models {
-		out.Models = append(out.Models, config.Model(model))
+		out.Models = append(out.Models, model.toConfig())
 	}
 	for _, server := range in.MCPServers {
 		out.MCPServers = append(out.MCPServers, config.MCPServer(server))
@@ -419,7 +441,7 @@ func fromConfigInput(in config.Input) yamlInput {
 		out.Providers = append(out.Providers, yamlProvider(provider))
 	}
 	for _, model := range in.Models {
-		out.Models = append(out.Models, yamlModel(model))
+		out.Models = append(out.Models, fromConfigModel(model))
 	}
 	for _, server := range in.MCPServers {
 		out.MCPServers = append(out.MCPServers, yamlMCPServer(server))
