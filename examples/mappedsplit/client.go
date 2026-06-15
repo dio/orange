@@ -251,7 +251,10 @@ func runClientREPL(args []string) error {
 
 	go pollMappedSplitChanges(ctx, logger, c, state, *interval)
 
-	rl, err := readline.NewEx(&readline.Config{Prompt: "orange> "})
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:       "orange> ",
+		AutoComplete: state,
+	})
 	if err != nil {
 		return err
 	}
@@ -451,6 +454,28 @@ func (s *mappedSplitREPLState) Execute(ctx context.Context, line string) (cherry
 	return s.repl.Execute(ctx, line)
 }
 
+func (s *mappedSplitREPLState) Do(line []rune, pos int) ([][]rune, int) {
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > len(line) {
+		pos = len(line)
+	}
+
+	words, partial := completionWords(string(line[:pos]))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.latest == nil || s.latest.Opened == nil {
+		return nil, 0
+	}
+	activeScope := ""
+	if s.repl != nil {
+		activeScope = s.repl.ActiveScope()
+	}
+	candidates := mappedSplitCompletionCandidates(s.latest.Opened, activeScope, words)
+	return completionMatches(candidates, partial), len([]rune(partial))
+}
+
 func (s *mappedSplitREPLState) Replace(result *config.SyncResult) error {
 	s.mu.Lock()
 	scope := ""
@@ -527,6 +552,334 @@ func (s *mappedSplitREPLState) set(result *config.SyncResult, defaultScope strin
 	s.repl = session
 	s.mu.Unlock()
 	return nil
+}
+
+func completionWords(line string) ([]string, string) {
+	if line == "" {
+		return nil, ""
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return nil, ""
+	}
+	if isCompletionBoundary(line[len(line)-1]) {
+		return fields, ""
+	}
+	return fields[:len(fields)-1], fields[len(fields)-1]
+}
+
+func isCompletionBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
+func mappedSplitCompletionCandidates(opened *config.Opened, activeScope string, words []string) []string {
+	if len(words) == 0 {
+		return []string{"summary", "scopes", "use", "llm", "mcp", "inspect", "reload", "sync", "help", "quit", "exit"}
+	}
+	switch words[0] {
+	case "use":
+		if len(words) == 1 {
+			return completionScopes(opened)
+		}
+	case "inspect":
+		if len(words) == 1 {
+			return []string{"metadata", "principals", "mcp", "all"}
+		}
+	case "llm":
+		return llmCompletionCandidates(opened, activeScope, words[1:])
+	case "mcp":
+		return mcpCompletionCandidates(opened, activeScope, words[1:])
+	}
+	return nil
+}
+
+func llmCompletionCandidates(opened *config.Opened, activeScope string, args []string) []string {
+	if len(args) == 0 {
+		return combineCompletionCandidates(
+			[]string{"principals", "providers", "models", "model", "capability"},
+			completionScopes(opened),
+			completionPrincipals(opened, activeScope),
+		)
+	}
+	switch args[0] {
+	case "principals":
+		if len(args) == 1 {
+			return completionScopes(opened)
+		}
+	case "providers":
+		return nil
+	case "models":
+		if len(args) == 1 {
+			return completionProviderFlags(opened)
+		}
+		if args[len(args)-1] == "--provider" {
+			return completionProviders(opened)
+		}
+	case "model":
+		if len(args) == 1 {
+			return combineCompletionCandidates(completionModels(opened), completionProviderFlags(opened))
+		}
+		if args[len(args)-1] == "--provider" {
+			return completionProviders(opened)
+		}
+		if len(args) == 2 && !strings.HasPrefix(args[1], "--provider") {
+			return completionProviderFlags(opened)
+		}
+	case "capability":
+		if len(args) == 1 {
+			return completionModels(opened)
+		}
+	}
+
+	scope := activeScope
+	offset := 0
+	if len(args) > 0 && containsString(completionScopes(opened), args[0]) {
+		scope = args[0]
+		offset = 1
+	}
+	count := len(args) - offset
+	if offset == 0 {
+		switch count {
+		case 0:
+			return combineCompletionCandidates(completionScopes(opened), completionPrincipals(opened, activeScope))
+		case 1:
+			return completionModels(opened)
+		}
+		return nil
+	}
+	switch count {
+	case 0:
+		return completionPrincipals(opened, scope)
+	case 1:
+		return completionModels(opened)
+	}
+	return nil
+}
+
+func mcpCompletionCandidates(opened *config.Opened, activeScope string, args []string) []string {
+	if len(args) == 0 {
+		return combineCompletionCandidates(
+			[]string{"paths", "initialize", "list", "call"},
+			completionScopes(opened),
+			completionMCPPathTargets(opened, activeScope),
+		)
+	}
+	switch args[0] {
+	case "paths":
+		if len(args) == 1 {
+			return combineCompletionCandidates(completionScopes(opened), []string{"--tools"})
+		}
+		if len(args) == 2 && args[1] != "--tools" {
+			return []string{"--tools"}
+		}
+		return nil
+	case "initialize", "list":
+		return mcpPathCommandCompletionCandidates(opened, activeScope, args[1:], false)
+	case "call":
+		return mcpPathCommandCompletionCandidates(opened, activeScope, args[1:], true)
+	default:
+		return mcpPathCommandCompletionCandidates(opened, activeScope, args, true)
+	}
+}
+
+func mcpPathCommandCompletionCandidates(opened *config.Opened, activeScope string, args []string, includeTool bool) []string {
+	scope := activeScope
+	offset := 0
+	if len(args) > 0 && containsString(completionScopes(opened), args[0]) {
+		scope = args[0]
+		offset = 1
+	}
+	count := len(args) - offset
+	switch count {
+	case 0:
+		if offset == 1 {
+			return completionMCPPathTargets(opened, scope)
+		}
+		return combineCompletionCandidates(completionScopes(opened), completionMCPPathTargets(opened, activeScope))
+	case 1:
+		if includeTool {
+			return completionMCPTools(opened, scope, normalizeCompletionMCPTarget(args[offset]))
+		}
+		return nil
+	}
+	return nil
+}
+
+func completionScopes(opened *config.Opened) []string {
+	if opened == nil {
+		return nil
+	}
+	return sortedStrings(opened.Map.Scopes)
+}
+
+func completionPrincipals(opened *config.Opened, scope string) []string {
+	if opened == nil || scope == "" {
+		return nil
+	}
+	principals, err := (mappedSplitREPLBackend{opened: opened}).LLMPrincipals(context.Background(), scope)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(principals))
+	for _, principal := range principals {
+		out = append(out, principal.PrincipalSlug)
+	}
+	return sortedStrings(out)
+}
+
+func completionProviders(opened *config.Opened) []string {
+	if opened == nil {
+		return nil
+	}
+	providers, err := (mappedSplitREPLBackend{opened: opened}).Providers(context.Background())
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, provider.ID)
+	}
+	return sortedStrings(out)
+}
+
+func completionProviderFlags(opened *config.Opened) []string {
+	providers := completionProviders(opened)
+	out := make([]string, 0, len(providers)*2+1)
+	out = append(out, "--provider")
+	for _, provider := range providers {
+		out = append(out, "--provider="+provider)
+	}
+	return sortedStrings(out)
+}
+
+func completionModels(opened *config.Opened) []string {
+	if opened == nil {
+		return nil
+	}
+	models, err := (mappedSplitREPLBackend{opened: opened}).Models(context.Background())
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		out = append(out, model.ID)
+	}
+	return sortedStrings(out)
+}
+
+func completionMCPPathTargets(opened *config.Opened, scope string) []string {
+	if opened == nil || scope == "" {
+		return nil
+	}
+	paths, err := (mappedSplitREPLBackend{opened: opened}).MCPPaths(context.Background(), scope)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(paths)*2)
+	for _, path := range paths {
+		out = append(out, path.Path)
+		if strings.HasPrefix(path.Path, "s/") {
+			out = append(out, "server="+strings.TrimPrefix(path.Path, "s/"))
+		} else {
+			out = append(out, "profile="+path.Path)
+		}
+	}
+	return sortedStrings(out)
+}
+
+func completionMCPTools(opened *config.Opened, scope string, path string) []string {
+	if opened == nil || scope == "" || path == "" {
+		return nil
+	}
+	paths, err := (mappedSplitREPLBackend{opened: opened}).MCPPaths(context.Background(), scope)
+	if err != nil {
+		return nil
+	}
+	out := []string{}
+	for _, candidate := range paths {
+		if candidate.Path != path {
+			continue
+		}
+		for _, tool := range candidate.Tools {
+			out = append(out, tool.ExposedName)
+		}
+	}
+	return sortedStrings(out)
+}
+
+func normalizeCompletionMCPTarget(value string) string {
+	switch {
+	case strings.HasPrefix(value, "server="):
+		return "s/" + strings.TrimPrefix(value, "server=")
+	case strings.HasPrefix(value, "profile="):
+		return strings.TrimPrefix(value, "profile=")
+	default:
+		return value
+	}
+}
+
+func combineCompletionCandidates(groups ...[]string) []string {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+	out := make([]string, 0, total)
+	for _, group := range groups {
+		out = append(out, group...)
+	}
+	return sortedStrings(out)
+}
+
+func completionMatches(candidates []string, partial string) [][]rune {
+	candidates = sortedStrings(candidates)
+	out := make([][]rune, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !strings.HasPrefix(candidate, partial) {
+			continue
+		}
+		suffix := candidate[len(partial):]
+		if suffix == "" {
+			suffix = " "
+		} else if !strings.ContainsAny(suffix, " \t") {
+			suffix += " "
+		}
+		out = append(out, []rune(suffix))
+	}
+	return out
+}
+
+func sortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 type mappedSplitREPLBackend struct {

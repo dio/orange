@@ -57,6 +57,9 @@ orange> sync
 orange> quit
 ```
 
+Press `Tab` in the REPL to complete commands, scopes, principals, models,
+providers, MCP paths, and MCP tool names from the active mapped-split view.
+
 The REPL keeps polling in the background. When the server publishes a newer map,
 the client prints a notification such as:
 
