@@ -404,6 +404,47 @@ for normal map-diff/component-fetch/open behavior.
 `SnapshotMetadata.source_revision` observed during fetch so data planes can
 expose component source diagnostics without request-time bundle fetches.
 
+## Inspection API
+
+Orange also publishes generated protocol definitions for a read-only inspection
+surface under `api/orange/inspect/v1`. This API is for a separate operator
+client inspecting a running enforcement point's active opened Cherry
+configuration. It is not a control-plane fetch, mutation, or source-of-truth
+API.
+
+The service contract is:
+
+```proto
+service InspectionService {
+  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc Generation(GenerationRequest) returns (GenerationResponse);
+  rpc Scopes(ScopesRequest) returns (ScopesResponse);
+  rpc Providers(ProvidersRequest) returns (ProvidersResponse);
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+  rpc ResolveLLM(ResolveLLMRequest) returns (ResolveLLMResponse);
+  rpc ResolveMCP(ResolveMCPRequest) returns (ResolveMCPResponse);
+  rpc MatchView(MatchViewRequest) returns (MatchViewResponse);
+  rpc PickView(PickViewRequest) returns (PickViewResponse);
+  rpc AdaptView(AdaptViewRequest) returns (AdaptViewResponse);
+}
+```
+
+Every RPC answers from the data plane's active immutable generation captured at
+handler entry. Implementations must not call Orange control-plane state, fetch
+new component resources, resolve provider or MCP secret bytes, include
+request-time auth headers, or expose raw `literal://` values. The protocol has
+an explicit `protocol_version` and capability list so external inspectors can
+check compatibility before issuing richer queries. Raw Cherry bundle export is
+not part of the default service; adding it would require a separate opt-in
+contract with authentication and redaction tests.
+
+Orange owns the shared protocol, generated packages, and a small `config`
+facade. A data plane such as Plum owns the optional handler implementation,
+runtime mount point, admin authentication, and conversion from its active
+generation to sanitized inspection responses. Embedders should implement
+`config.InspectionService` and mount it with `config.NewInspector` so ordinary
+integration code does not depend on generated Connect handler types directly.
+
 ## Package Shape
 
 Current package roles:
@@ -411,8 +452,10 @@ Current package roles:
 ```text
 api/orange/config/v1/
   generated SnapshotService and snapshot protobuf types
+api/orange/inspect/v1/
+  generated InspectionService diagnostic protobuf types
 config/
-  Server, Client, Store, and SnapshotService for mapped-split integrations
+  Server, Client, Store, SnapshotService, and Inspector facades
 producer/
   ConfigPayload builder for Cherry bundle bytes
 snapshot/

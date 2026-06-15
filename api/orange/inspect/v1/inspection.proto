@@ -1,0 +1,326 @@
+syntax = "proto3";
+
+package orange.inspect.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "orange/auth/v1/auth_options.proto";
+
+// InspectionService exposes read-only diagnostic queries over a running data
+// plane's active opened configuration.
+service InspectionService {
+  // Status returns protocol compatibility and current generation summary.
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // Generation returns the active configuration generation metadata.
+  rpc Generation(GenerationRequest) returns (GenerationResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // Scopes lists scopes available in the active configuration.
+  rpc Scopes(ScopesRequest) returns (ScopesResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // Providers lists LLM providers in the active configuration.
+  rpc Providers(ProvidersRequest) returns (ProvidersResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // Models lists client-facing LLM models in the active configuration.
+  rpc Models(ModelsRequest) returns (ModelsResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // ResolveLLM resolves a principal and requested model against the active view.
+  rpc ResolveLLM(ResolveLLMRequest) returns (ResolveLLMResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // ResolveMCP resolves an MCP path/profile query against the active view.
+  rpc ResolveMCP(ResolveMCPRequest) returns (ResolveMCPResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // MatchView returns the runtime match diagnostic view.
+  rpc MatchView(MatchViewRequest) returns (MatchViewResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // PickView returns the runtime upstream-pick diagnostic view.
+  rpc PickView(PickViewRequest) returns (PickViewResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+
+  // AdaptView returns the runtime provider-adaptation diagnostic view.
+  rpc AdaptView(AdaptViewRequest) returns (AdaptViewResponse) {
+    option (orange.auth.v1.auth) = {
+      auth_types: [
+        AUTH_TYPE_API_KEY,
+        AUTH_TYPE_SERVICE_ACCOUNT,
+        AUTH_TYPE_CLIENT_ASSERTION
+      ]
+      scopes: ["admin"]
+    };
+  }
+}
+
+// StatusRequest requests inspection API status.
+message StatusRequest {
+  // client_protocol_version is the highest inspection protocol version the
+  // caller understands. Zero means unknown.
+  uint32 client_protocol_version = 1;
+}
+
+// StatusResponse describes inspection protocol compatibility and availability.
+message StatusResponse {
+  uint32 protocol_version = 1;
+  repeated string capabilities = 2;
+  bool has_generation = 3;
+  GenerationInfo generation = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}
+
+// GenerationRequest requests active generation metadata.
+message GenerationRequest {}
+
+// GenerationResponse returns active generation metadata.
+message GenerationResponse {
+  uint32 protocol_version = 1;
+  GenerationInfo generation = 2;
+}
+
+// ScopesRequest requests active scopes.
+message ScopesRequest {}
+
+// ScopesResponse returns active scopes.
+message ScopesResponse {
+  GenerationInfo generation = 1;
+  repeated ScopeInfo scopes = 2;
+}
+
+// ProvidersRequest requests active providers.
+message ProvidersRequest {}
+
+// ProvidersResponse returns active providers.
+message ProvidersResponse {
+  GenerationInfo generation = 1;
+  repeated ProviderInfo providers = 2;
+}
+
+// ModelsRequest requests active models.
+message ModelsRequest {}
+
+// ModelsResponse returns active models.
+message ModelsResponse {
+  GenerationInfo generation = 1;
+  repeated ModelInfo models = 2;
+}
+
+// ResolveLLMRequest asks the server to resolve an LLM route without executing a
+// request or resolving provider secrets.
+message ResolveLLMRequest {
+  string scope = 1;
+  string principal_slug = 2 [(buf.validate.field).string.min_len = 1];
+  string model = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// ResolveLLMResponse returns a sanitized LLM resolution result.
+message ResolveLLMResponse {
+  GenerationInfo generation = 1;
+  bool matched = 2;
+  LLMRoute route = 3;
+  repeated string diagnostics = 4;
+}
+
+// ResolveMCPRequest asks the server to resolve an MCP path/profile query.
+message ResolveMCPRequest {
+  string scope = 1;
+  string principal_slug = 2;
+  string path = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// ResolveMCPResponse returns a sanitized MCP resolution result.
+message ResolveMCPResponse {
+  GenerationInfo generation = 1;
+  bool matched = 2;
+  MCPRoute route = 3;
+  repeated string diagnostics = 4;
+}
+
+// MatchViewRequest requests the match diagnostic view.
+message MatchViewRequest {
+  string scope = 1;
+}
+
+// PickViewRequest requests the upstream-pick diagnostic view.
+message PickViewRequest {
+  string scope = 1;
+}
+
+// AdaptViewRequest requests the provider-adaptation diagnostic view.
+message AdaptViewRequest {
+  string scope = 1;
+}
+
+// MatchViewResponse returns the match diagnostic view as a typed protobuf
+// Struct suitable for JSON output.
+message MatchViewResponse {
+  GenerationInfo generation = 1;
+  google.protobuf.Struct view = 2;
+}
+
+// PickViewResponse returns the upstream-pick diagnostic view as a typed
+// protobuf Struct suitable for JSON output.
+message PickViewResponse {
+  GenerationInfo generation = 1;
+  google.protobuf.Struct view = 2;
+}
+
+// AdaptViewResponse returns the provider-adaptation diagnostic view as a typed
+// protobuf Struct suitable for JSON output.
+message AdaptViewResponse {
+  GenerationInfo generation = 1;
+  google.protobuf.Struct view = 2;
+}
+
+// GenerationInfo describes one immutable opened configuration snapshot.
+message GenerationInfo {
+  string generation_id = 1;
+  string revision = 2;
+  string source_revision = 3;
+  string scope_kind = 4;
+  string scope_id = 5;
+  repeated string scopes = 6;
+  uint64 map_version = 7;
+  uint64 map_revision = 8;
+  repeated ComponentInfo components = 9;
+  google.protobuf.Timestamp observed_at = 10;
+}
+
+// ComponentInfo summarizes one opened component bundle.
+message ComponentInfo {
+  string id = 1;
+  string resource = 2;
+  string component = 3;
+  uint64 version = 4;
+  uint64 checksum = 5;
+  uint64 size = 6;
+  string source_revision = 7;
+}
+
+// ScopeInfo describes one configured scope.
+message ScopeInfo {
+  string id = 1;
+  string kind = 2;
+  string name = 3;
+}
+
+// ProviderInfo describes one LLM provider without exposing secret bytes.
+message ProviderInfo {
+  string id = 1;
+  string kind = 2;
+  string endpoint = 3;
+  string redacted_secret_ref = 4;
+  map<string, string> metadata = 5;
+}
+
+// ModelInfo describes one client-facing model.
+message ModelInfo {
+  string id = 1;
+  string provider = 2;
+  string name = 3;
+  string mode = 4;
+  repeated string capabilities = 5;
+}
+
+// LLMRoute describes a resolved LLM request path.
+message LLMRoute {
+  string model = 1;
+  string provider = 2;
+  string provider_kind = 3;
+  string backend_model = 4;
+  string partition = 5;
+  string redacted_secret_ref = 6;
+}
+
+// MCPRoute describes a resolved MCP request path.
+message MCPRoute {
+  string server = 1;
+  string path = 2;
+  string endpoint = 3;
+  string redacted_auth_ref = 4;
+  repeated MCPTool tools = 5;
+}
+
+// MCPTool describes one MCP tool binding.
+message MCPTool {
+  string name = 1;
+  string description = 2;
+}

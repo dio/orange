@@ -192,6 +192,146 @@ bundles, and drops omitted partition refs.
 - Keep snapshots immutable and swap only complete snapshots.
 - Leave failed publish attempts on the previous active map/view.
 
+## Inspection Integration
+
+Use Orange's inspection API only for read-only diagnostics against a running
+data plane's already-opened active configuration. It is not a control-plane
+fetch path, mutation API, raw bundle export, or source-of-truth query surface.
+
+### Plum / EP Server Side
+
+Plum should expose attach-mode diagnostics by implementing
+`config.InspectionService` over its active `*plum.ConfigGeneration` pointer and
+mounting it through `config.NewInspector`. Runtime code should not depend
+directly on generated Connect handler types.
+
+```go
+type generationProvider interface {
+    CurrentGeneration() *plum.ConfigGeneration
+}
+
+type inspectionService struct {
+    generations generationProvider
+}
+
+func (s *inspectionService) Status(ctx context.Context, req *config.StatusRequest) (*config.StatusResponse, error) {
+    gen := s.generations.CurrentGeneration()
+    if gen == nil {
+        return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no active generation"))
+    }
+    return &config.StatusResponse{
+        ProtocolVersion: config.InspectionProtocolVersion,
+        Capabilities: []string{
+            "status",
+            "generation",
+            "scopes",
+            "providers",
+            "models",
+            "resolve_llm",
+            "resolve_mcp",
+            "match_view",
+            "pick_view",
+            "adapt_view",
+        },
+        HasGeneration: true,
+        Generation: generationInfoFrom(gen),
+    }, nil
+}
+
+var genProvider generationProvider // supplied by the embedder runtime
+
+inspector, err := config.NewInspector(config.InspectorOptions{
+    Service: &inspectionService{generations: genProvider},
+    HandlerOptions: []connect.HandlerOption{
+        // Add the embedder's admin auth/interceptor here.
+    },
+})
+if err != nil {
+    return err
+}
+mux := http.NewServeMux()
+inspector.Mount(mux)
+```
+
+Plum implementation notes:
+
+- The runtime/provider should load the current generation pointer once per RPC
+  method and pass that captured generation into helper functions such as
+  `generationInfoFrom`, `providersFrom`, `modelsFrom`, `resolveLLMFrom`, and
+  `matchViewFrom`.
+- Wire the inspection handler only when the Plum/EP process explicitly enables
+  it. Keep it off by default.
+- Mount the handler on an embedder-owned admin mux/listener. Do not reuse
+  Orange's mapped-split `SnapshotService` auth/lane resolver for attach mode;
+  attach mode inspects the local EP process, not an Orange control plane lane.
+- Keep CLI, readline, REPL rendering, and command dispatch out of Plum runtime
+  packages. Runtime only serves sanitized typed inspection responses.
+
+### `cmd/inspector attach` Client Side
+
+`cmd/inspector attach --admin <url>` should call the generated inspection
+Connect client and adapt those responses into the Cherry REPL backend. The
+inspector process owns REPL state such as active scope, history, completion,
+timeouts, output formatting, and `sync`/`reload`; the server remains stateless
+apart from its active generation.
+
+```go
+client := inspectv1connect.NewInspectionServiceClient(httpClient, adminURL)
+
+status, err := client.Status(ctx, connect.NewRequest(&config.StatusRequest{
+    ClientProtocolVersion: config.InspectionProtocolVersion,
+}))
+if err != nil {
+    return err
+}
+if status.Msg.GetProtocolVersion() != config.InspectionProtocolVersion {
+    return fmt.Errorf("unsupported inspection protocol version %d", status.Msg.GetProtocolVersion())
+}
+
+models, err := client.Models(ctx, connect.NewRequest(&config.ModelsRequest{}))
+if err != nil {
+    return err
+}
+for _, model := range models.Msg.GetModels() {
+    // Convert to the local Cherry REPL backend model view.
+    _ = model.GetId()
+}
+```
+
+Client-side rules:
+
+- Use `Status` first for protocol and capability checks before enabling richer
+  REPL commands.
+- Map Cherry REPL backend methods to inspection RPCs: `Scopes`, `Providers`,
+  `Models`, `ResolveLLM`, `ResolveMCP`, `MatchView`, `PickView`, and
+  `AdaptView`.
+- Implement `sync`/`reload` as a fresh `Status`/`Generation` refresh against
+  the running EP. Attach mode must not call Orange SnapshotService or any
+  upstream control plane.
+- Treat Connect `failed_precondition` from the server as "no active
+  generation" and surface it clearly to the operator.
+- Preserve active scope locally across refreshes when the refreshed generation
+  still contains that scope.
+- Do not print raw `literal://` values. The server must redact before sending,
+  and the inspector should avoid introducing alternate unredacted output paths.
+
+Implementation rules:
+
+- Capture the active generation pointer once at each RPC handler entry and
+  answer entirely from that immutable generation.
+- Return stable Connect errors for no generation, malformed requests, unknown
+  routes, and no matches.
+- Populate `ProtocolVersion` with `config.InspectionProtocolVersion` and list
+  only capabilities the handler actually implements.
+- Redact secret refs before assigning `RedactedSecretRef` or
+  `RedactedAuthRef`. Never include resolved secret bytes, request-time auth
+  headers, raw `literal://` values, or full tenant/provider records.
+- Keep admin authentication and listener ownership in the embedding process.
+  Orange provides the reusable handler facade only; it still must not start a
+  standalone server process.
+- Do not call Orange SnapshotService, source stores, remote control planes, or
+  latest component pointers from inspection handlers.
+
 ## Consumer Validation Checklist
 
 - Verify typed map checksums through `config.Client`.
