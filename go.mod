@@ -7,7 +7,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/chzyer/readline v1.5.1
-	github.com/dio/cherry v0.0.0-20260614103056-e73bc01c6281
+	github.com/dio/cherry v0.0.0-20260615044138-df81f2d5a2ba
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
