@@ -22,6 +22,7 @@ import (
 	"github.com/chzyer/readline"
 	"github.com/dio/cherry"
 	cherryrepl "github.com/dio/cherry/repl"
+
 	"github.com/dio/orange/config"
 	"github.com/dio/orange/mappedsplit"
 )
@@ -954,6 +955,10 @@ func (b mappedSplitREPLBackend) ResolveLLMPlan(_ context.Context, scope string, 
 
 func (b mappedSplitREPLBackend) Providers(context.Context) ([]cherry.ProviderInfo, error) {
 	return b.opened.LLMGeneric.Opened.Reader.Providers(), nil
+}
+
+func (b mappedSplitREPLBackend) ProviderDescriptions(context.Context) ([]cherry.ProviderDescription, error) {
+	return b.opened.LLMGeneric.Opened.Reader.ProviderDescriptions(), nil
 }
 
 func (b mappedSplitREPLBackend) Models(context.Context) ([]cherry.ModelInfo, error) {
