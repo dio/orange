@@ -304,7 +304,7 @@ func testMappedSplitRequest(lane string, revision int) MappedSplitRequest {
 
 func testLLMInput(slug string, secretRef string) Input {
 	return Input{
-		Providers: []Provider{{ID: "openai", Kind: "openai", Endpoint: "https://api.openai.example", SecretRef: "env://OPENAI_PLATFORM", AuthType: "bearer"}},
+		Providers: []Provider{{ID: "openai", Kind: "openai", BackendSchema: "openai", Endpoint: "https://api.openai.example", SecretRef: "env://OPENAI_PLATFORM", AuthType: "bearer"}},
 		Models:    []Model{{ID: "gpt-4o-mini", Provider: "openai", Name: "gpt-4o-mini", Mode: "chat"}},
 		Scopes: []Scope{{
 			ID: "prod",

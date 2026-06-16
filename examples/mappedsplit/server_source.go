@@ -15,8 +15,9 @@ import (
 	"time"
 
 	"github.com/dio/cherry"
-	"github.com/dio/orange/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dio/orange/config"
 )
 
 const exampleGenerationID = "gen-demo"
@@ -240,12 +241,37 @@ type yamlInput struct {
 }
 
 type yamlProvider struct {
-	ID         string `yaml:"id"`
-	Kind       string `yaml:"kind"`
-	Endpoint   string `yaml:"endpoint"`
-	SecretRef  string `yaml:"secret_ref"`
-	AuthType   string `yaml:"auth_type"`
-	PathPrefix string `yaml:"path_prefix"`
+	ID            string `yaml:"id"`
+	Kind          string `yaml:"kind"`
+	BackendSchema string `yaml:"backend_schema"`
+	Endpoint      string `yaml:"endpoint"`
+	SecretRef     string `yaml:"secret_ref"`
+	AuthType      string `yaml:"auth_type"`
+	PathPrefix    string `yaml:"path_prefix"`
+}
+
+func (p yamlProvider) toConfig() config.Provider {
+	return config.Provider{
+		ID:            p.ID,
+		Kind:          p.Kind,
+		BackendSchema: p.BackendSchema,
+		Endpoint:      p.Endpoint,
+		SecretRef:     p.SecretRef,
+		AuthType:      p.AuthType,
+		PathPrefix:    p.PathPrefix,
+	}
+}
+
+func fromConfigProvider(p config.Provider) yamlProvider {
+	return yamlProvider{
+		ID:            p.ID,
+		Kind:          p.Kind,
+		BackendSchema: p.BackendSchema,
+		Endpoint:      p.Endpoint,
+		SecretRef:     p.SecretRef,
+		AuthType:      p.AuthType,
+		PathPrefix:    p.PathPrefix,
+	}
 }
 
 type yamlModel struct {
@@ -346,7 +372,7 @@ func (in yamlInput) toConfig() config.Input {
 		Scopes:     make([]config.Scope, 0, len(in.Scopes)),
 	}
 	for _, provider := range in.Providers {
-		out.Providers = append(out.Providers, config.Provider(provider))
+		out.Providers = append(out.Providers, provider.toConfig())
 	}
 	for _, model := range in.Models {
 		out.Models = append(out.Models, model.toConfig())
@@ -438,7 +464,7 @@ func fromConfigInput(in config.Input) yamlInput {
 		Scopes:     make([]yamlScope, 0, len(in.Scopes)),
 	}
 	for _, provider := range in.Providers {
-		out.Providers = append(out.Providers, yamlProvider(provider))
+		out.Providers = append(out.Providers, fromConfigProvider(provider))
 	}
 	for _, model := range in.Models {
 		out.Models = append(out.Models, fromConfigModel(model))

@@ -31,10 +31,11 @@ func minimalBuildResult(_ string) producer.BuildResult {
 		Scopes:         []string{"ws-1"},
 		Input: cherry.Input{
 			Providers: []cherry.Provider{{
-				ID:        "openai",
-				Kind:      "openai",
-				Endpoint:  "https://api.openai.com",
-				SecretRef: "env://OPENAI_API_KEY",
+				ID:            "openai",
+				Kind:          "openai",
+				BackendSchema: "openai",
+				Endpoint:      "https://api.openai.com",
+				SecretRef:     "env://OPENAI_API_KEY",
 			}},
 			Models: []cherry.Model{{
 				ID:       "gpt-4o-mini",

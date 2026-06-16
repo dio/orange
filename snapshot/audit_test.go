@@ -26,10 +26,11 @@ func TestSecretRefNotInMetadata(t *testing.T) {
 			Scopes:         []string{"ws-secret"},
 			Input: cherry.Input{
 				Providers: []cherry.Provider{{
-					ID:        "openai",
-					Kind:      "openai",
-					Endpoint:  "https://api.openai.com",
-					SecretRef: sensitiveRef,
+					ID:            "openai",
+					Kind:          "openai",
+					BackendSchema: "openai",
+					Endpoint:      "https://api.openai.com",
+					SecretRef:     sensitiveRef,
 				}},
 				Models: []cherry.Model{{
 					ID:       "gpt-4o-mini",

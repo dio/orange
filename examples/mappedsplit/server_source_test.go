@@ -63,6 +63,7 @@ func defaultYAML(aliceSecret string, includeProfile bool) string {
 	return `providers:
   - id: openai
     kind: openai
+    backend_schema: openai
     endpoint: https://api.openai.com
     secret_ref: env://OPENAI_PLATFORM
     auth_type: bearer

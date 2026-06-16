@@ -223,7 +223,7 @@ func testBundleEnvelope(t *testing.T, version uint64) *configv1.SnapshotEnvelope
 			Key: key,
 			Input: Input{
 				Providers: []Provider{{
-					ID: "openai", Kind: "openai", Endpoint: "https://api.openai.com", SecretRef: "env://OPENAI_API_KEY",
+					ID: "openai", Kind: "openai", BackendSchema: "openai", Endpoint: "https://api.openai.com", SecretRef: "env://OPENAI_API_KEY",
 				}},
 				Models: []Model{{ID: "gpt-4o-mini", Provider: "openai", Name: "gpt-4o-mini"}},
 				Scopes: []Scope{{

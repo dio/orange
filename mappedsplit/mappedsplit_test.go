@@ -123,11 +123,12 @@ func componentFetcher(out BuildOutput) ComponentFetcher {
 func testInput(aliceSecret string) cherry.Input {
 	return cherry.Input{
 		Providers: []cherry.Provider{{
-			ID:        "openai",
-			Kind:      "openai",
-			Endpoint:  "https://api.openai.com",
-			SecretRef: "env://OPENAI_PLATFORM",
-			AuthType:  "bearer",
+			ID:            "openai",
+			Kind:          "openai",
+			BackendSchema: "openai",
+			Endpoint:      "https://api.openai.com",
+			SecretRef:     "env://OPENAI_PLATFORM",
+			AuthType:      "bearer",
 		}},
 		Models: []cherry.Model{{ID: "gpt-4o-mini", Provider: "openai", Name: "gpt-4o-mini", Mode: "chat"}},
 		MCPServers: []cherry.MCPServer{{

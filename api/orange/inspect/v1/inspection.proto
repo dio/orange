@@ -289,6 +289,7 @@ message ProviderInfo {
   string endpoint = 3;
   string redacted_secret_ref = 4;
   map<string, string> metadata = 5;
+  string backend_schema = 6;
 }
 
 // ModelInfo describes one client-facing model.
@@ -308,6 +309,7 @@ message LLMRoute {
   string backend_model = 4;
   string partition = 5;
   string redacted_secret_ref = 6;
+  string backend_schema = 7;
 }
 
 // MCPRoute describes a resolved MCP request path.

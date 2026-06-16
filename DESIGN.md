@@ -132,7 +132,10 @@ embedders need, so simple producer integrations can import only
 Component responsibilities:
 
 - `llm-generic`: providers, models, default/platform LLM routes, and platform
-  LLM secret refs.
+  LLM secret refs. LLM providers must carry both the frontend API `kind` and
+  the mandatory backend translator `backend_schema`; `kind` describes the
+  client-facing API family while `backend_schema` selects the runtime provider
+  schema such as `openai`, `gcpvertexai`, `gcpanthropic`, or `awsbedrock`.
 - `mcp-servers`: MCP server catalog, direct `s/<server>` paths, and platform
   MCP secret refs.
 - `llm-user-key-*`: principal/key-specific routes, BYOK refs, and rate policy

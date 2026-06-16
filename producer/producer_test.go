@@ -22,10 +22,11 @@ func fixedClock() func() time.Time {
 func minimalInput() cherry.Input {
 	return cherry.Input{
 		Providers: []cherry.Provider{{
-			ID:        "openai",
-			Kind:      "openai",
-			Endpoint:  "https://api.openai.com",
-			SecretRef: "env://OPENAI_API_KEY",
+			ID:            "openai",
+			Kind:          "openai",
+			BackendSchema: "openai",
+			Endpoint:      "https://api.openai.com",
+			SecretRef:     "env://OPENAI_API_KEY",
 		}},
 		Models: []cherry.Model{{
 			ID:       "gpt-4o-mini",

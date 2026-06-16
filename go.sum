@@ -17,8 +17,8 @@ github.com/chzyer/test v1.0.0/go.mod h1:2JlltgoNkt4TW/z9V/IzDdFaMTM2JPIi26O1pF38
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dio/cherry v0.0.0-20260615044138-df81f2d5a2ba h1:CAqHBOmkRh8YXLBecepWbtogd5nk/+Kl9pEzbALxuEk=
-github.com/dio/cherry v0.0.0-20260615044138-df81f2d5a2ba/go.mod h1:duXSruQYD/q97Zc0YwriAAnboIFxrhlqZyIIrCyeTPw=
+github.com/dio/cherry v0.0.0-20260616075307-e49540bac7da h1:9Wlsr9yb6epDTjIXMDfUSpatNHXcGUd8sYopF623Omw=
+github.com/dio/cherry v0.0.0-20260616075307-e49540bac7da/go.mod h1:yTPhj5pIMNIbaXr9bklKvubVV+leqZzwAa64cjA/i8k=
 github.com/fergusstrange/embedded-postgres v1.34.0 h1:c6RKhPKFsLVU+Tdxsx8q0UxCHsvZZ/iShAnljRBXs6s=
 github.com/fergusstrange/embedded-postgres v1.34.0/go.mod h1:w0YvnCgf19o6tskInrOOACtnqfVlOvluz3hlNLY7tRk=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=

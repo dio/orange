@@ -1346,6 +1346,7 @@ type ProviderInfo struct {
 	Endpoint          string                 `protobuf:"bytes,3,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
 	RedactedSecretRef string                 `protobuf:"bytes,4,opt,name=redacted_secret_ref,json=redactedSecretRef,proto3" json:"redacted_secret_ref,omitempty"`
 	Metadata          map[string]string      `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BackendSchema     string                 `protobuf:"bytes,6,opt,name=backend_schema,json=backendSchema,proto3" json:"backend_schema,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1413,6 +1414,13 @@ func (x *ProviderInfo) GetMetadata() map[string]string {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *ProviderInfo) GetBackendSchema() string {
+	if x != nil {
+		return x.BackendSchema
+	}
+	return ""
 }
 
 // ModelInfo describes one client-facing model.
@@ -1501,6 +1509,7 @@ type LLMRoute struct {
 	BackendModel      string                 `protobuf:"bytes,4,opt,name=backend_model,json=backendModel,proto3" json:"backend_model,omitempty"`
 	Partition         string                 `protobuf:"bytes,5,opt,name=partition,proto3" json:"partition,omitempty"`
 	RedactedSecretRef string                 `protobuf:"bytes,6,opt,name=redacted_secret_ref,json=redactedSecretRef,proto3" json:"redacted_secret_ref,omitempty"`
+	BackendSchema     string                 `protobuf:"bytes,7,opt,name=backend_schema,json=backendSchema,proto3" json:"backend_schema,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1573,6 +1582,13 @@ func (x *LLMRoute) GetPartition() string {
 func (x *LLMRoute) GetRedactedSecretRef() string {
 	if x != nil {
 		return x.RedactedSecretRef
+	}
+	return ""
+}
+
+func (x *LLMRoute) GetBackendSchema() string {
+	if x != nil {
+		return x.BackendSchema
 	}
 	return ""
 }
@@ -1818,13 +1834,14 @@ const file_orange_inspect_v1_inspection_proto_rawDesc = "" +
 	"\tScopeInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\x86\x02\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xad\x02\n" +
 	"\fProviderInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1a\n" +
 	"\bendpoint\x18\x03 \x01(\tR\bendpoint\x12.\n" +
 	"\x13redacted_secret_ref\x18\x04 \x01(\tR\x11redactedSecretRef\x12I\n" +
-	"\bmetadata\x18\x05 \x03(\v2-.orange.inspect.v1.ProviderInfo.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\x05 \x03(\v2-.orange.inspect.v1.ProviderInfo.MetadataEntryR\bmetadata\x12%\n" +
+	"\x0ebackend_schema\x18\x06 \x01(\tR\rbackendSchema\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x83\x01\n" +
@@ -1833,14 +1850,15 @@ const file_orange_inspect_v1_inspection_proto_rawDesc = "" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
 	"\x04mode\x18\x04 \x01(\tR\x04mode\x12\"\n" +
-	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\"\xd4\x01\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\"\xfb\x01\n" +
 	"\bLLMRoute\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12#\n" +
 	"\rprovider_kind\x18\x03 \x01(\tR\fproviderKind\x12#\n" +
 	"\rbackend_model\x18\x04 \x01(\tR\fbackendModel\x12\x1c\n" +
 	"\tpartition\x18\x05 \x01(\tR\tpartition\x12.\n" +
-	"\x13redacted_secret_ref\x18\x06 \x01(\tR\x11redactedSecretRef\"\xb0\x01\n" +
+	"\x13redacted_secret_ref\x18\x06 \x01(\tR\x11redactedSecretRef\x12%\n" +
+	"\x0ebackend_schema\x18\a \x01(\tR\rbackendSchema\"\xb0\x01\n" +
 	"\bMCPRoute\x12\x16\n" +
 	"\x06server\x18\x01 \x01(\tR\x06server\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1a\n" +
