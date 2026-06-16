@@ -146,14 +146,15 @@ func (p *coldStartMappedSplitProvider) FetchMappedSplitMap(
 	}
 
 	typedMap, unchanged, err = p.store.FetchMappedSplitMap(ctx, lane, lastVersion, lastChecksum)
-	if err != nil {
+	switch {
+	case err != nil:
 		resultLabel = "error"
 		captureSpanError(&spanErr, err)
-	} else if unchanged {
+	case unchanged:
 		resultLabel = "unchanged"
-	} else if built {
+	case built:
 		resultLabel = "built"
-	} else {
+	default:
 		resultLabel = "filled_by_other"
 	}
 	return typedMap, unchanged, err

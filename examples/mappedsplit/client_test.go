@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dio/orange/config"
-	"github.com/dio/orange/mappedsplit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dio/orange/config"
+	"github.com/dio/orange/mappedsplit"
 )
 
 func TestMappedSplitCompletionCandidatesIncludeDynamicViewData(t *testing.T) {

@@ -15,11 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/dio/orange/config"
 	pgquesetup "github.com/dio/orange/config/pgque"
 	"github.com/dio/orange/config/postgres/migration"
 	"github.com/dio/orange/internal/embeddedpg"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func runServer(args []string) error {

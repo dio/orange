@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestTraceExportEnabledFromEnv(t *testing.T) {
@@ -166,7 +166,7 @@ func TestDefaultProviderDetection(t *testing.T) {
 	require.True(t, defaultTracerProvider(otel.GetTracerProvider()))
 	require.True(t, defaultMeterProvider(otel.GetMeterProvider()))
 	require.True(t, defaultTextMapPropagator(otel.GetTextMapPropagator()))
-	require.False(t, defaultTracerProvider(trace.NewNoopTracerProvider()))
+	require.False(t, defaultTracerProvider(tracenoop.NewTracerProvider()))
 	require.False(t, defaultMeterProvider(noop.NewMeterProvider()))
 	require.False(t, defaultTextMapPropagator(staticPropagator{}))
 }
@@ -211,7 +211,7 @@ func TestConfigureFromEnvPreservesExistingGlobalProviders(t *testing.T) {
 		resetSDKForTest()
 	})
 
-	tracerProvider := trace.NewNoopTracerProvider()
+	tracerProvider := tracenoop.NewTracerProvider()
 	meterProvider := noop.NewMeterProvider()
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetMeterProvider(meterProvider)

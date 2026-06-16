@@ -199,7 +199,6 @@ func TestPgStoreColdStartConcurrentFetchesUseLease(t *testing.T) {
 	notFound := make(chan struct{}, callers)
 	errs := make(chan error, callers)
 	for i := range callers {
-		i := i
 		store, err := NewPgStore(
 			pool,
 			WithPgStoreSchema(schema),
@@ -277,7 +276,6 @@ func TestPgStoreBuildRequestCoalescesByLane(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(calls)
 	for i := range calls {
-		i := i
 		go func() {
 			defer wg.Done()
 			err := store.MarkMappedSplitDirty(ctx, BuildRequest{
@@ -349,7 +347,6 @@ func TestPgStoreBuildLeaseAllowsOneHolderPerLane(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(contenders)
 	for i := range contenders {
-		i := i
 		store := newTestPgStoreWithOptions(t,
 			WithPgStoreSchema(schema),
 			WithPgStoreBuildLeaseHolderID(fmt.Sprintf("holder-%02d", i)),

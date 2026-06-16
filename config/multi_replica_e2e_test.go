@@ -220,7 +220,6 @@ func TestPgQueSchedulerMultiReplicaE2E(t *testing.T) {
 		{scheduler: schedulerB, lane: "lane-b"},
 		{scheduler: schedulerC, lane: "lane-c"},
 	} {
-		work := work
 		go func() {
 			defer wg.Done()
 			errs <- work.scheduler.processMessage(ctx, pgQueMessage{

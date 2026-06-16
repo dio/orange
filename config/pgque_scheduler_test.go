@@ -175,7 +175,6 @@ func TestPgQueSchedulerTwoWorkersRaceOneLane(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	for _, scheduler := range []*PgQueScheduler{schedulerA, schedulerB} {
-		scheduler := scheduler
 		go func() {
 			defer wg.Done()
 			for range 5 {
@@ -319,7 +318,7 @@ func freshPgQueSchedulerDB(t *testing.T) *pgxpool.Pool {
 	_, err := base.Exec(context.Background(), "CREATE DATABASE "+pgx.Identifier{dbName}.Sanitize())
 	require.NoError(t, err)
 	cfg := base.Config().Copy()
-	cfg.ConnConfig.Config.Database = dbName
+	cfg.ConnConfig.Database = dbName
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() {

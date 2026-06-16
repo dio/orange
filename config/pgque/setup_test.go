@@ -33,7 +33,6 @@ func TestPgQueSetupConcurrentIsIdempotent(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for _, p := range []*pgxpool.Pool{pool, poolB} {
-		p := p
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -76,7 +75,7 @@ func startPgQueTestDB(t *testing.T) *pgxpool.Pool {
 	require.NoError(t, err)
 
 	cfg := base.Config().Copy()
-	cfg.ConnConfig.Config.Database = dbName
+	cfg.ConnConfig.Database = dbName
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	pgQueTestDB.base = base
@@ -94,7 +93,7 @@ func newPgQueTestPool(t *testing.T) *pgxpool.Pool {
 		t.Fatal("pgque test database not started")
 	}
 	cfg := pgQueTestDB.base.Config().Copy()
-	cfg.ConnConfig.Config.Database = pgQueTestDB.dbName
+	cfg.ConnConfig.Database = pgQueTestDB.dbName
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	return pool

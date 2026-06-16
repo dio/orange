@@ -373,7 +373,7 @@ func (s *PgStore) GetMappedSplitBuildRequest(ctx context.Context, lane string) (
 		WHERE lane = $1 AND dirty = true
 	`, lane).Scan(&req.Lane, &req.RequestedBy, &req.SourceRevision, &req.ChangeHint)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			if err := tx.Commit(ctx); err != nil {
 				resultLabel = "error"
 				err := fmt.Errorf("get mapped split build request lane %q: commit: %w", lane, err)
@@ -572,7 +572,7 @@ func (s *PgStore) FetchMappedSplitMap(ctx context.Context, lane string, lastVers
 		WHERE c.lane = $1
 	`, lane).Scan(&version, &checksum, &payload)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			resultLabel = "not_found"
 			err := fmt.Errorf("%w: mapped split map lane %q", snapshot.ErrNoSnapshot, lane)
 			captureSpanError(&spanErr, err)
@@ -634,7 +634,7 @@ func (s *PgStore) FetchResource(ctx context.Context, lane string, resource strin
 
 	version, checksum, payload, err := latestPgResource(ctx, tx, lane, resource)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			resultLabel = "not_found"
 			err := fmt.Errorf("%w: lane %q resource %q", snapshot.ErrNoSnapshot, lane, resource)
 			captureSpanError(&spanErr, err)
@@ -706,7 +706,7 @@ func publishPgResource(ctx context.Context, tx pgx.Tx, lane string, componentNam
 	}
 
 	currentVersion, currentChecksum, currentPayload, err := latestPgResource(ctx, tx, lane, component.Ref.Resource)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("publish %s: read current resource: %w", componentName, err)
 	}
 
@@ -793,7 +793,7 @@ func (s *PgStore) acquireMappedSplitBuildLease(ctx context.Context, lane string)
 		&lease.LockedUntil,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return BuildLease{}, fmt.Errorf("%w: lane %q", ErrBuildLeaseHeld, lane)
 		}
 		return BuildLease{}, fmt.Errorf("acquire mapped split build lease lane %q: %w", lane, err)

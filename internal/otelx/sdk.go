@@ -92,7 +92,6 @@ func ConfigureFromEnv(ctx context.Context) error {
 			return joinSetupError(ctx, err, exportShutdowns)
 		}
 		metricExp = exp
-		exportShutdowns = append(exportShutdowns, exp.Shutdown)
 	}
 
 	var shutdowns []func(context.Context) error

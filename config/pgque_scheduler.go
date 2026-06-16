@@ -156,12 +156,7 @@ func (s *PgQueScheduler) ScheduleBuild(ctx context.Context, req BuildRequest) er
 		captureSpanError(&spanErr, err)
 		return err
 	}
-	payload, err := json.Marshal(pgQueBuildPayload{
-		Lane:           req.Lane,
-		RequestedBy:    req.RequestedBy,
-		SourceRevision: req.SourceRevision,
-		ChangeHint:     req.ChangeHint,
-	})
+	payload, err := json.Marshal(pgQueBuildPayload(req))
 	if err != nil {
 		resultLabel = "error"
 		err := fmt.Errorf("pgque scheduler: marshal build payload: %w", err)
